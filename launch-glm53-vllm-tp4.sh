@@ -62,7 +62,7 @@ docker run --gpus all -d \
     --max-num-seqs 6 --block-size 2304 --moe-backend marlin --speculative-config '{"method":"mtp","num_speculative_tokens":4}' --kv-cache-dtype fp8_e4m3 --kv-cache-memory 9663676416 \
     --enforce-eager \
     --tool-call-parser glm47 --enable-auto-tool-choice \
-    --reasoning-parser glm45 --default-chat-template-kwargs '{"enable_thinking": false}' \
+    --reasoning-parser glm45 --chat-template /models/glm-5.3-flash-nvfp4/chat_template_mm.jinja --default-chat-template-kwargs '{"enable_thinking": false}' \
     --distributed-executor-backend mp \
     --nnodes 4 --node-rank "$NODE_RANK" \
     --master-addr "$HEAD_IP" --master-port "$MPORT" \
