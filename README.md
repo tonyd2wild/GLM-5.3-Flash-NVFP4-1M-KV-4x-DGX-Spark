@@ -94,8 +94,8 @@ Model: [zai-org/GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash) · 
 
 ## 5M-token KV pool at 1M context (2026-08-27, stress-gated)
 
-The shipped config is now **32 GiB KV per rank = 5,033,164 fp8 tokens** at  — 4.8 concurrent full-1M-context requests. Found via the **residual-headroom rule**: grow the KV slab until only ~8-10 GB stays available per node (nodes idle at ~37-42 GB available on the old 9 GiB config).
+The shipped config is now **32 GiB KV per rank = 5,033,164 fp8 tokens** at `--max-model-len 1048576` — 4.8 concurrent full-1M-context requests. Found via the **residual-headroom rule**: grow the KV slab until only ~8-10 GB stays available per node (nodes idle at ~37-42 GB available on the old 9 GiB config).
 
 **The 38 GiB cautionary tale:** 38 GiB/rank (5,975,779 tokens) allocates cleanly, boots, and answers short prompts — then the first 20K-token prefill NVRM-OOMs a rank and the engine dies. On GB10, "serving" is not the bar; **gate every KV bump behind a real long prefill** with the engine verified alive afterward. 32 GiB passes that gate with ~10 GB residual per node.
 
-Also required for vision requests:  (the checkpoint ships a text-only template; image requests 500 without the mm variant).
+Also required for vision requests: `--chat-template chat_template_mm.jinja` (the checkpoint ships a text-only template; image requests 500 without the mm variant).
