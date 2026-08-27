@@ -60,6 +60,10 @@ sync; echo 3 | sudo tee /proc/sys/vm/drop_caches
 
 Edit the rank→IP map at the top of the launcher for your fabric. Thinking is off by default (`--default-chat-template-kwargs`); re-enable per request with `chat_template_kwargs: {"enable_thinking": true}`. Tool calling ships enabled (`glm47` parser).
 
+## Fast loading: InstantTensor (added 2026-08-27)
+
+The v9 image adds the InstantTensor direct-I/O loader: **model load drops from ~10 minutes to 40-100 seconds** (`--load-format instanttensor`, already in the shipped launchers). Two things to know: its pip install silently downgrades NCCL to a fabric-fatal version (v9 re-pins 2.30.7 in the same layer), and because direct I/O never fills the page cache, it also defeats the first layer of the GB10 KV-allocation wall -- the full story and the remaining (unsolved) second wall are in [docs/GB10-KV-MEMORY-LADDER.md](docs/GB10-KV-MEMORY-LADDER.md). Credit: jack6464 (NVIDIA forum) for the pointer.
+
 ## Hard-won rules (each one cost us a boot)
 
 1. Tear down **all** ranks before relaunching **any** — a fresh rank that rendezvouses with a dying one hangs.

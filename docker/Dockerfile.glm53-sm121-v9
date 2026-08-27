@@ -1,0 +1,8 @@
+FROM radixark/vllm-glm53-flash:sm121-v8
+
+# InstantTensor direct-IO model loader (--load-format instanttensor): ~10x faster
+# loads AND bypasses the page cache that causes the GB10 NVRM KV-allocation wall
+# (see GB10-KV-MEMORY-LADDER.md). Its install downgrades nvidia-nccl-cu13 to
+# 2.29.7 (fabric-fatal, same sabotage as the flashinfer nightly) - re-pin in the
+# same layer.
+RUN pip install -q instanttensor && pip install -q nvidia-nccl-cu13==2.30.7 && pip show nvidia-nccl-cu13 | grep -q "Version: 2.30.7" && python3 -c "import instanttensor" && echo V9-OK
