@@ -12,7 +12,7 @@ This TP4 deployment now ships as a **2×2** — pick your KV-cache format and yo
 |---|---|---|
 | **KV size** | ~656 B/token/layer | **368 B/token/layer** (~half) |
 | **Censored** ([LibertAIDAI](https://huggingface.co/LibertAIDAI/GLM-5.3-Flash-NVFP4)) | ✅ TP4 flagship — 5.03M-token pool | compatible (not separately benched) |
-| **Uncensored** ([keys ablit](https://huggingface.co/drowzeys/keys-GLM-5.3-Flash-NVFP4-ablit-l15-45-anchorstock)) | ✅ drop-in — same launcher, verified | ✅ **TP4: 4,989,084-token pool = 4.76× a full 1M context** |
+| **Uncensored** ([keys ablit](https://huggingface.co/drowzeys/keys-GLM-5.3-Flash-NVFP4-ablit-l15-45-anchorstock)) | ✅ drop-in — same launcher, verified | ✅ **TP4: 6,652,112-token pool = 6.34× a full 1M context** (32 GiB/rank) |
 
 ### Lane B — NVFP4 KV at TP4 (verified serving, 2026-08-27)
 
@@ -20,13 +20,14 @@ We took the **NVFP4 KV** recipe from [drowzeys/keys](https://github.com/drowzeys
 
 | Metric | NVFP4-KV TP4 (uncensored) |
 |---|---|
-| **KV pool** | **4,989,084 tokens = 4.76× a full 1,048,576-token context** (≈5 full-1M conversations at once) |
+| **KV pool** | **6,652,112 tokens = 6.34× a full 1,048,576-token context** (≈6.3 full-1M conversations at once), at 32 GiB KV/rank |
 | KV dtype | `nvfp4_ds_mla`, `KV_FP8_ROPE=1` — **368 B/token/layer** (vs 656 fp8, 1152 bf16) |
-| Context | 1,048,576 (1M), served on `:8000` |
+| Context | 1,048,576 (1M), served on `:8000` as `glm-5.3-flash` (drop-in name) |
+| Decode | **~36 tok/s single-stream** warmed (temp 0, structured) — `--enforce-eager` is required by the b12x kernels and caps single-stream; concurrent aggregate is far higher. Prefill ~1,050–1,290 tok/s, TTFT ~0.2 s |
 | Vision | ON (image input verified) · Thinking off by default · uncensored (no refusals) |
-| Spec decode | native MTP head, k=2 · GMU 0.85 hard cap · 24 GiB KV/rank (headroom for more) |
+| Spec decode | native MTP head, k=2 · GMU 0.85 hard cap · 32 GiB KV/rank |
 
-As far as we can tell this is the **first NVFP4 KV cache at TP4 on consumer Blackwell** — ~4× the KV pool of the reference 2-Spark TP2 (1.22M tokens) and past our own fp8 lane. **Full credit to [drowzeys / keys](https://github.com/drowzeys/keys-vLLm.0.27.1-GLM-5.3-Flash-NVFP4-NVFP4KV-1M-Context-Abliterated)** for the Zero-RoPE shim, the b12x NVFP4 kernels, and the ablit weights; our contribution is the TP4 port + the 4-node fabric/memory config.
+**fp8 vs NVFP4 KV at EQUAL 32 GiB/rank budget:** NVFP4 KV = **6,652,112 tokens** vs fp8 = 5,033,164 — **1.32× the pool at the same memory** (the 368-vs-656 B/token density showing through). As far as we can tell this is the **first NVFP4 KV cache at TP4 on consumer Blackwell**, and ~5.4× the reference 2-Spark TP2 pool (1.22M tokens). **Full credit to [drowzeys / keys](https://github.com/drowzeys/keys-vLLm.0.27.1-GLM-5.3-Flash-NVFP4-NVFP4KV-1M-Context-Abliterated)** for the Zero-RoPE shim, the b12x NVFP4 kernels, and the ablit weights; our contribution is the TP4 port + the 4-node fabric/memory config.
 
 ## Numbers
 
