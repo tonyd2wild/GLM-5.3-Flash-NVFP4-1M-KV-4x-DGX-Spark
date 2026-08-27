@@ -78,3 +78,15 @@ Prompted by jack6464's DGX-Spark forum post, we added the **InstantTensor** dire
 
 Credit: jack6464's post on the NVIDIA developer forum (GLM-5.3-Flash thread, post #22) for
 pointing at InstantTensor on this hardware.
+
+### Correction (later the same night): InstantTensor is not TP2-stable here
+
+After the celebratory paragraphs above: in **all four** of our v9 TP2 boots (KV 7.5 GiB x3 and
+the proven 4.14 GiB x1) a rank died silently ~60-90 s after its load completed — exit code None,
+no NVRM error, no OOM-kill, no dmesg trace — including at the budget that is 100% stable on v8
+with the standard loader. The common factor is the loader itself (likely its native I/O threads /
+pinned pools in the multi-node topology; cf. eugr/spark-vllm-docker#29 for the same class of
+problem with fastsafetensors in cluster mode). So: **the page-cache findings stand (920K
+allocates!), the load-speed numbers stand, but the production TP2 config remains v8 + standard
+loader + 4.14 GiB.** Revisit InstantTensor when upstream stabilizes multi-node, or for
+single-node/TP4 experiments where the blast radius is understood.
