@@ -85,3 +85,28 @@ wait for healthy. A crash becomes a ~15-minute unattended recovery.
 | ~14:34 | TP4 24G died "under traffic" | **disease 1** (identical signature) |
 | ~15:06 | TP4 24G + patch died under combined load | **disease 2** (24G phantom edge) |
 | 15:21 | TP4 16G + patch: all gates pass | — |
+
+
+## Addendum: the wall has no knob — because there is no cap (driver forensics)
+
+Follow-up investigation (driver source + NVIDIA confirmation) closed the question of
+whether the allocation ceiling is raisable:
+
+- **GB10's GPU has no framebuffer**: `nvidia-smi` reports FB memory N/A, Addressing
+  Mode ATS — GPU memory IS system RAM. No carveout heap exists to resize, and NVIDIA
+  staff explicitly deny any fixed allocatable limit. A single process has held 71GB+.
+- **The mechanism** (open-kernel-module source, `nvidia/nv-vm.c` ~lines 236-275): NVRM
+  allocates system pages with `__GFP_RETRY_MAYFAIL` (+ `__GFP_COMP` for 2MB chunks) —
+  bounded reclaim, never forces page-cache eviction, fails on fragmentation. After
+  buffered-I/O loading of 50-100GB of weights, the page cache owns the balance and the
+  KV slab is refused wherever MemFree ran out. The wall is emergent, not configured.
+- **NVIDIA KB 5776/5728** sanction the drop_caches remedy and document the misleading
+  free-memory reporting.
+- **What actually moves the ceiling**: (1) O_DIRECT weight loading (InstantTensor lane —
+  already proved a 7.5G TP2 slab that buffered loading could never allocate; stabilize
+  it multi-node and the big pools return), (2) drop_caches + compact_memory ritual,
+  (3) `vm.min_free_kbytes` 1-2GB + higher `vm.watermark_scale_factor` to keep a free
+  cushion, (4) the July 2026 DGX Spark update's improved OOM handling.
+- `probes/gb10_alloc_probe.py` walks allocations in 1GB steps with immediate touch to
+  map the exact wall (reserve-fail vs touch-fail) — run cold vs flushed in a
+  maintenance window.
