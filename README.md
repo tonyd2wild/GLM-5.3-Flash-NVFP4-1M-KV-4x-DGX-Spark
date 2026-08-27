@@ -4,6 +4,30 @@
 
 **As far as we can tell: the first TP4 `glm5_next` deployment outside NVIDIA B200 hardware, the first fp8 KV cache for a NoPE-MLA model on any consumer Blackwell part, and a 1.26-million-token KV pool on $16K of desk hardware.**
 
+## Two KV-cache lanes + censored/uncensored (added 2026-08-27)
+
+This TP4 deployment now ships as a **2×2** — pick your KV-cache format and your weights:
+
+|  | **Lane A — fp8 KV** (our FlashInfer SM12x unlock) | **Lane B — NVFP4 KV** (b12x path, credit [keys/drowzeys](https://github.com/drowzeys/keys-vLLm.0.27.1-GLM-5.3-Flash-NVFP4-NVFP4KV-1M-Context-Abliterated)) |
+|---|---|---|
+| **KV size** | ~656 B/token/layer | **368 B/token/layer** (~half) |
+| **Censored** ([LibertAIDAI](https://huggingface.co/LibertAIDAI/GLM-5.3-Flash-NVFP4)) | ✅ TP4 flagship — 5.03M-token pool | compatible (not separately benched) |
+| **Uncensored** ([keys ablit](https://huggingface.co/drowzeys/keys-GLM-5.3-Flash-NVFP4-ablit-l15-45-anchorstock)) | ✅ drop-in — same launcher, verified | ✅ **TP4: 4,989,084-token pool = 4.76× a full 1M context** |
+
+### Lane B — NVFP4 KV at TP4 (verified serving, 2026-08-27)
+
+We took the **NVFP4 KV** recipe from [drowzeys/keys](https://github.com/drowzeys/keys-vLLm.0.27.1-GLM-5.3-Flash-NVFP4-NVFP4KV-1M-Context-Abliterated) — the **Zero-RoPE shim** (pad GLM's NoPE attention with a virtual 64-dim RoPE so the cache presents DeepSeek's 576-dim record to the NVFP4 kernels, bit-for-bit identical to NoPE) + Luke Alonso's **b12x** `B12X_MLA_SPARSE` backend + `KV_DTYPE=nvfp4_ds_mla` — and **extended it from his 2-Spark TP2 to our 4-Spark TP4** on the uncensored `keys` ablit weights.
+
+| Metric | NVFP4-KV TP4 (uncensored) |
+|---|---|
+| **KV pool** | **4,989,084 tokens = 4.76× a full 1,048,576-token context** (≈5 full-1M conversations at once) |
+| KV dtype | `nvfp4_ds_mla`, `KV_FP8_ROPE=1` — **368 B/token/layer** (vs 656 fp8, 1152 bf16) |
+| Context | 1,048,576 (1M), served on `:8000` |
+| Vision | ON (image input verified) · Thinking off by default · uncensored (no refusals) |
+| Spec decode | native MTP head, k=2 · GMU 0.85 hard cap · 24 GiB KV/rank (headroom for more) |
+
+As far as we can tell this is the **first NVFP4 KV cache at TP4 on consumer Blackwell** — ~4× the KV pool of the reference 2-Spark TP2 (1.22M tokens) and past our own fp8 lane. **Full credit to [drowzeys / keys](https://github.com/drowzeys/keys-vLLm.0.27.1-GLM-5.3-Flash-NVFP4-NVFP4KV-1M-Context-Abliterated)** for the Zero-RoPE shim, the b12x NVFP4 kernels, and the ablit weights; our contribution is the TP4 port + the 4-node fabric/memory config.
+
 ## Numbers
 
 | Metric | TP4 flagship |
