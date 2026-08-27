@@ -94,7 +94,7 @@ Model: [zai-org/GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash) · 
 
 ## 5M-token KV pool at 1M context (2026-08-27, stress-gated)
 
-The shipped config is now **24 GiB KV per rank = 3,774,873 fp8 tokens** at `--max-model-len 1048576` — 3.6 concurrent full-1M-context requests. Found via the **residual-headroom rule**: grow the KV slab until only ~8-10 GB stays available per node (nodes idle at ~37-42 GB available on the old 9 GiB config).
+The shipped config is now **16 GiB KV per rank = 2,516,582 fp8 tokens** (see docs/SM121-CRASH-FORENSICS-2026-08-27.md for why bigger pools fail) at `--max-model-len 1048576` — 3.6 concurrent full-1M-context requests. Found via the **residual-headroom rule**: grow the KV slab until only ~8-10 GB stays available per node (nodes idle at ~37-42 GB available on the old 9 GiB config).
 
 **The 38 GiB cautionary tale:** 38 GiB/rank (5,975,779 tokens) allocates cleanly, boots, and answers short prompts — then the first 20K-token prefill NVRM-OOMs a rank and the engine dies. On GB10, "serving" is not the bar; **gate every KV bump behind a real long prefill** with the engine verified alive afterward. 32 GiB passed a single-prefill gate, then died under three overlapping real-traffic requests (head rank carries API server + NFS duty). The bar is CONCURRENT prefills: 24 GiB survives 3x simultaneous 20K prefills with ~18 GB residual on the head.
 
