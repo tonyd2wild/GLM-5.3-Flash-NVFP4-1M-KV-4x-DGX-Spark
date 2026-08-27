@@ -59,7 +59,7 @@ docker run --gpus all -d \
     --tensor-parallel-size 4 \
     --gpu-memory-utilization 0.85 \
     --max-model-len 1048576 \
-    --max-num-seqs 6 --block-size 2304 --moe-backend marlin --speculative-config '{"method":"mtp","num_speculative_tokens":4}' --kv-cache-dtype fp8_e4m3 --kv-cache-memory 9663676416 \
+    --max-num-seqs 6 --block-size 2304 --moe-backend marlin --speculative-config '{"method":"mtp","num_speculative_tokens":4}' --kv-cache-dtype fp8_e4m3 --kv-cache-memory 34359738368 \
     --enforce-eager \
     --tool-call-parser glm47 --enable-auto-tool-choice \
     --reasoning-parser glm45 --chat-template /models/glm-5.3-flash-nvfp4/chat_template_mm.jinja --default-chat-template-kwargs '{"enable_thinking": false}' \

@@ -11,7 +11,7 @@
 | Decode | **35.7 tok/s** generic median · **up to 63.8 tok/s** warmed on structured/agentic output (MTP acceptance runs hot — [re-bench below](#warmed-streaming-re-bench--the-357-is-a-floor-not-the-ceiling-2026-08-27)) |
 | TTFT | **0.204 s median** |
 | Context | **1,048,576 (model-native 1M) — launcher default** · the 1.26M-token KV pool physically holds a full 1M-token request. Cap --max-model-len lower (e.g. 300000) for a snappier multi-user endpoint |
-| KV pool | **1,263,415 tokens fp8** — 4.82 concurrent full-context requests (or one ~1M-token context) |
+| KV pool | **5,033,164 tokens fp8** — 4.82 concurrent full-context requests (or one ~1M-token context) |
 | Speculative decode | native MTP head, 4 draft tokens |
 | KV dtype | fp8_e4m3 (our FlashInfer SM12x unlock — see below) |
 | Boot | ~12 min (quarter weights per rank) |
@@ -91,3 +91,11 @@ experiment lane before production).
 ## Credits
 
 Model: [zai-org/GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash) · Quant: [LibertAIDAI/GLM-5.3-Flash-NVFP4](https://huggingface.co/LibertAIDAI/GLM-5.3-Flash-NVFP4) · barrydeen (gmu reference + quant table) · vLLM [PR #53906](https://github.com/vllm-project/vllm/pull/53906) authors for the day-0 image · FlashInfer 0.6.18 · Deployed and debugged by Knox (Claude) for [@tonyd2wild](https://github.com/tonyd2wild). Companion deep-dive repo: [GLM-5.3-Flash-NVFP4-262K-2x-DGX-Spark](https://github.com/tonyd2wild/GLM-5.3-Flash-NVFP4-262K-2x-DGX-Spark).
+
+## 5M-token KV pool at 1M context (2026-08-27, stress-gated)
+
+The shipped config is now **32 GiB KV per rank = 5,033,164 fp8 tokens** at  — 4.8 concurrent full-1M-context requests. Found via the **residual-headroom rule**: grow the KV slab until only ~8-10 GB stays available per node (nodes idle at ~37-42 GB available on the old 9 GiB config).
+
+**The 38 GiB cautionary tale:** 38 GiB/rank (5,975,779 tokens) allocates cleanly, boots, and answers short prompts — then the first 20K-token prefill NVRM-OOMs a rank and the engine dies. On GB10, "serving" is not the bar; **gate every KV bump behind a real long prefill** with the engine verified alive afterward. 32 GiB passes that gate with ~10 GB residual per node.
+
+Also required for vision requests:  (the checkpoint ships a text-only template; image requests 500 without the mm variant).
