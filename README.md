@@ -29,6 +29,21 @@ We took the **NVFP4 KV** recipe from [drowzeys/keys](https://github.com/drowzeys
 
 **fp8 vs NVFP4 KV at EQUAL 32 GiB/rank budget:** NVFP4 KV = **6,652,112 tokens** vs fp8 = 5,033,164 — **1.32× the pool at the same memory** (the 368-vs-656 B/token density showing through). As far as we can tell this is the **first NVFP4 KV cache at TP4 on consumer Blackwell**, and ~5.4× the reference 2-Spark TP2 pool (1.22M tokens). **Full credit to [drowzeys / keys](https://github.com/drowzeys/keys-vLLm.0.27.1-GLM-5.3-Flash-NVFP4-NVFP4KV-1M-Context-Abliterated)** for the Zero-RoPE shim, the b12x NVFP4 kernels, and the ablit weights; our contribution is the TP4 port + the 4-node fabric/memory config.
 
+### fp8 vs NVFP4 KV — speed head-to-head (measured 2026-08-27)
+
+The density win above is **not free** — we ran both lanes back-to-back on the same `:8000` endpoint (same uncensored `keys` ablit weights, TP4, `--enforce-eager`, MTP, temp 0, warmed) to price it:
+
+| Metric | Lane A — fp8 KV | Lane B — NVFP4 KV | Winner |
+|---|---:|---:|:--|
+| **Decode** (structured/agentic, warmed) | **~55 tok/s** (51 / 56 / 55) | **~37 tok/s** (37 / 37) | **fp8 ~1.5×** |
+| Prefill (warmed, ~9K-token prompt) | **~3,530 tok/s · 2.55 s TTFT** (3 runs) | ~1,449 tok/s · 6.9 s TTFT¹ | fp8¹ |
+| KV pool @ 32 GiB/rank | 5,033,164 | **6,652,112** | **NVFP4 1.32×** |
+| KV density | 656 B/token/layer | **368 B/token/layer** | **NVFP4 1.8×** |
+
+¹ The NVFP4 prefill/TTFT is a **single sample that may have been partly cold** (our fp8 first-prefill was 19 s / 467 tok/s cold, then settled to ~2.5 s / ~3,530 warmed — the b12x kernels JIT on the first large prefill too). We did not capture a clean warmed long-prompt NVFP4 prefill before teardown, so **treat decode as the definitive head-to-head and the prefill row as directional, not final.**
+
+**What this means:** NVFP4 KV's ~33 % slower decode is the b12x `B12X_MLA_SPARSE` sparse-attention path (+ the per-token NVFP4 dequant) doing more compute per step than fp8's marlin path — and `--enforce-eager`, which the b12x kernels require, caps single-stream on both lanes. So the trade is clean: **NVFP4 = KV *capacity* (bigger context pool at equal VRAM), fp8 = *speed* (faster tokens for the same agent work).** For our production endpoint we run **fp8 as the daily driver** (faster, uncensored, vision, simplest to operate) and keep **NVFP4 as the flex** for the rare job that needs the giant pool over throughput.
+
 ## Numbers
 
 | Metric | TP4 flagship |
