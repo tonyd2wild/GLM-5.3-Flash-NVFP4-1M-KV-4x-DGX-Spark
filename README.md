@@ -10,8 +10,8 @@
 |---|---|
 | Decode | **35.7 tok/s** generic median · **up to 63.8 tok/s** warmed on structured/agentic output (MTP acceptance runs hot — [re-bench below](#warmed-streaming-re-bench--the-357-is-a-floor-not-the-ceiling-2026-08-27)) |
 | TTFT | **0.204 s median** |
-| Context | 262,144 tokens per request |
-| KV pool | **1,263,415 tokens fp8** — 4.82 concurrent full-context requests |
+| Context | 262,144 default per request · **settable to 1M** — the KV pool physically holds a full 1M-token context |
+| KV pool | **1,263,415 tokens fp8** — 4.82 concurrent full-context requests (or one ~1M-token context) |
 | Speculative decode | native MTP head, 4 draft tokens |
 | KV dtype | fp8_e4m3 (our FlashInfer SM12x unlock — see below) |
 | Boot | ~12 min (quarter weights per rank) |
