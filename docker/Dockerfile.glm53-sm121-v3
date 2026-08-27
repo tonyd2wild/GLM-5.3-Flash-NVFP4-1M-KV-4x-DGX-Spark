@@ -1,0 +1,14 @@
+FROM radixark/vllm-glm53-flash:sm121-nope-mla
+
+# FlashInfer 0.6.17's FA2 MLA kernel produces NaN for 64-256-row batches on
+# SM121 (probed and bisected on Reddie's GPU; 1-6 and 512+ rows are clean).
+# The 0.6.18 nightly fixes it (all bisect cases clean) and is also the version
+# whose SM90 NoPE MLA support is official. Remove the 0.6.17 AOT jit-cache so
+# no stale prebuilt kernels can be loaded against the new python package;
+# everything JIT-compiles for 12.1a instead.
+RUN pip install -q --pre \
+      flashinfer-python==0.6.18.dev20260819 \
+      flashinfer-cubin==0.6.18.dev20260819 \
+      --extra-index-url https://flashinfer.ai/whl/nightly/ \
+    && pip uninstall -q -y flashinfer-jit-cache \
+    && python3 -c "import flashinfer; print('flashinfer', flashinfer.__version__)"

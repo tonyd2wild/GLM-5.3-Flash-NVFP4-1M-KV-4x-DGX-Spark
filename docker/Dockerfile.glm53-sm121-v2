@@ -1,0 +1,64 @@
+FROM radixark/vllm-glm53-flash:sm121-nope-mla
+
+# Debug build: env-gated NaN localizer. With GLM53_NAN_DEBUG=1, installs a
+# forward hook on every submodule of Glm5NextModel that logs the first module
+# whose output contains NaN/Inf, then keeps logging distinct offenders.
+RUN python3 - <<'PY'
+from pathlib import Path
+
+p = Path("/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py")
+s = p.read_text()
+
+hook_src = '''
+
+import os as _nan_os
+
+_NAN_SEEN: set = set()
+
+def _install_nan_hooks(model):
+    import torch as _t
+    from vllm.logger import init_logger as _il
+    _log = _il("glm53.nandebug")
+
+    def _mk(name):
+        def _hook(_mod, _inp, out):
+            def _chk(x):
+                if isinstance(x, _t.Tensor) and x.is_floating_point():
+                    bad = (~_t.isfinite(x.float())).sum().item()
+                    if bad and name not in _NAN_SEEN:
+                        _NAN_SEEN.add(name)
+                        _log.error("NANDEBUG first non-finite output in %s (%d bad / %d)", name, bad, x.numel())
+            if isinstance(out, tuple):
+                for o in out:
+                    _chk(o)
+            else:
+                _chk(out)
+        return _hook
+
+    for n, m in model.named_modules():
+        m.register_forward_hook(_mk(n))
+    _log.warning("NANDEBUG hooks installed on %d modules", sum(1 for _ in model.named_modules()))
+'''
+
+anchor = 'class Glm5NextMLP(nn.Module):'
+if s.count(anchor) != 1:
+    raise SystemExit("anchor not found")
+s = s.replace(anchor, hook_src + "\n\n" + anchor)
+
+# install hooks at the end of Glm5NextModel.__init__
+init_anchor = '''class Glm5NextModel(nn.Module):
+    def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):'''
+if s.count(init_anchor) != 1:
+    raise SystemExit("init anchor not found")
+
+# find the end of __init__ by locating the next 'def ' at method indent after it
+idx = s.index(init_anchor)
+nxt = s.index("\n    def ", idx + len(init_anchor))
+inject = '''
+        if _nan_os.environ.get("GLM53_NAN_DEBUG") == "1":
+            _install_nan_hooks(self)
+'''
+s = s[:nxt] + inject + s[nxt:]
+p.write_text(s)
+print("nan debug hooks injected")
+PY

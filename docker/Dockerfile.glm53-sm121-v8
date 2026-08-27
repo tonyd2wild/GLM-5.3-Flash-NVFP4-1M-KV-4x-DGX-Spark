@@ -1,0 +1,5 @@
+FROM radixark/vllm-glm53-flash:sm121-v7
+
+# fp8 KV cache for the FA2 NoPE sparse-MLA path on SM12x (see patch script).
+COPY patch_v8_fp8.py /tmp/patch_v8_fp8.py
+RUN python3 /tmp/patch_v8_fp8.py && rm /tmp/patch_v8_fp8.py
