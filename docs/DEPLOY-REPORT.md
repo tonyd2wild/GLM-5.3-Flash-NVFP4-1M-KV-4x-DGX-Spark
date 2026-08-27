@@ -176,3 +176,25 @@ MTP metrics under real traffic: mean acceptance length 2.5–2.9; per-position a
 ## Validation on the final config
 
 Coherent greedy output, correct identity, structured tool calls (`glm47` parser, `finish_reason: tool_calls`), finite logprobs, no NaN. Thinking is ON by default (`glm45` parser separates it); disable per-request with `chat_template_kwargs: {"enable_thinking": false}` or bake `--default-chat-template-kwargs` at launch.
+
+---
+
+# Addendum: Vision unlocked (2026-08-27 ~04:50 UTC)
+
+Image requests failed with `Failed to apply prompt replacement for mm_items['image'][0]`
+even though the vision tower loads. Root cause: **the checkpoint ships a TEXT-ONLY chat
+template** — image/video/audio items render as a `<reminder>You are unable to process this
+image...</reminder>` string, so no placeholder ever reaches vLLM's multimodal processor.
+
+Fix: a multimodal template variant (`chat_template_mm.jinja`, in the repo) whose media
+branch emits the placeholders the processor's PromptReplacement machinery actually scans
+for — **image: `<|begin_of_image|><|image|><|end_of_image|>`** (the bare `<|image|>` token
+is the scan target — NOT `<|endoftext|>`, which appears only in the profiling base text and
+cost us one boot), **video: `<|begin_of_video|><|video|><|end_of_video|>`** (the whole
+triple is the target). Serve with `--chat-template /models/.../chat_template_mm.jinja`.
+
+Verified: solid-color probe answers correctly ("Red"), image tokens in usage, reasoning
+split intact, text/tool paths unaffected. Also in this config: thinking ON by default with
+`--reasoning-parser glm45` so content carries only the answer and the monologue lands in
+`reasoning` — with thinking off, GLM emits untagged reasoning-prose into content (nothing
+for the parser to split), which breaks agent harnesses. Ship thinking-on + parser.
