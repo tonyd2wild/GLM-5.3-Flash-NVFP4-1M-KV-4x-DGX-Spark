@@ -1,6 +1,25 @@
-# GLM-5.3-Flash NVFP4 · 1M-Token KV · 4x DGX Spark · 36 tok/s
+# GLM-5.3-Flash NVFP4 + DFlash2 · 1M-Token KV · 4x DGX Spark · 47 tok/s
 
 [zai-org/GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash) (320B / A18B MoE, released 2026-08-26) serving across **all four NVIDIA DGX Spark (GB10) nodes** at tensor-parallel 4, using the [LibertAIDAI/GLM-5.3-Flash-NVFP4](https://huggingface.co/LibertAIDAI/GLM-5.3-Flash-NVFP4) quant — deployed the same day the model dropped.
+
+
+## DFlash2 speculative decoding — 46.9 tok/s single-stream (2026-08-28)
+
+**First working DFlash2 deployment of GLM-5.3-Flash on GB10.** The
+[`incoai/GLM-5.3-Flash-DFlash2`](https://huggingface.co/incoai/GLM-5.3-Flash-DFlash2)
+block-diffusion drafter — published for SGLang — now runs on the vLLM route:
+**46.9 tok/s single-stream vs 21.8 for MTP-4 (2.15x)** at **74.1 % draft
+acceptance**, costing **zero KV pool** (the drafter's layers slot-share the MLA
+tensors like GLM's own mamba layers). Measured at TP2, 262K context; the same
+overlay applies to this TP4 recipe.
+
+Concurrency sweep (TP2, zero failures): C1 35.1 · C2 41.6 · C3 40.6 · C4 47.5 ·
+**C5 56.2** · C6 47.7 aggregate tok/s.
+
+Method, the nine-boot failure ladder, and the KV-layout fix that keeps GLM on its
+custom fast path: **[docs/DFLASH2-SPECULATIVE-DECODING.md](docs/DFLASH2-SPECULATIVE-DECODING.md)**
+· bench detail: [docs/BENCH-C1-C6-DFLASH2.md](docs/BENCH-C1-C6-DFLASH2.md)
+· reproducible overlay: [`overlay-dflash2/`](overlay-dflash2/)
 
 **As far as we can tell: the first TP4 `glm5_next` deployment outside NVIDIA B200 hardware, the first fp8 KV cache for a NoPE-MLA model on any consumer Blackwell part, and a 1.26-million-token KV pool on $16K of desk hardware.**
 
