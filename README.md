@@ -1,5 +1,8 @@
 # GLM-5.3-Flash NVFP4 + DFlash2 · 1M-Token KV · 4x DGX Spark · 47 tok/s
 
+> 🔀 **Only have two Sparks?** The same images run at TP2 (262K context) — see the sibling repo:
+> **[GLM-5.3-Flash NVFP4 + DFlash2 · 2x DGX Spark →](https://github.com/tonyd2wild/GLM-5.3-Flash-NVFP4-DFlash2-2x-DGX-Spark)**
+
 [zai-org/GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash) (320B / A18B MoE, released 2026-08-26) serving across **all four NVIDIA DGX Spark (GB10) nodes** at tensor-parallel 4, using the [LibertAIDAI/GLM-5.3-Flash-NVFP4](https://huggingface.co/LibertAIDAI/GLM-5.3-Flash-NVFP4) quant — deployed the same day the model dropped.
 
 
