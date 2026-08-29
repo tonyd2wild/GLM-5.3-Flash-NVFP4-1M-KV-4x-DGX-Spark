@@ -5,6 +5,17 @@
 
 [zai-org/GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash) (320B / A18B MoE, released 2026-08-26) serving across **all four NVIDIA DGX Spark (GB10) nodes** at tensor-parallel 4, using the [LibertAIDAI/GLM-5.3-Flash-NVFP4](https://huggingface.co/LibertAIDAI/GLM-5.3-Flash-NVFP4) quant — deployed the same day the model dropped.
 
+## Weights: censored or uncensored (drop-in)
+
+Pick your weights: **same launcher, same recipe**, just point the model path at either. Both are NVFP4 and load identically.
+
+| | HuggingFace | notes |
+|---|---|---|
+| **Censored** | [LibertAIDAI/GLM-5.3-Flash-NVFP4](https://huggingface.co/LibertAIDAI/GLM-5.3-Flash-NVFP4) | stock GLM-5.3-Flash, NVFP4 weight-only |
+| **Uncensored (abliterated)** | [drowzeys/keys-GLM-5.3-Flash-NVFP4-ablit-l15-45-anchorstock](https://huggingface.co/drowzeys/keys-GLM-5.3-Flash-NVFP4-ablit-l15-45-anchorstock) | abliterated (layers 15-45, anchor-stock), no refusals |
+
+Uncensored abliteration credit: [drowzeys/keys](https://github.com/drowzeys).
+
 
 ## DFlash2 speculative decoding — 46.9 tok/s single-stream (2026-08-28)
 
