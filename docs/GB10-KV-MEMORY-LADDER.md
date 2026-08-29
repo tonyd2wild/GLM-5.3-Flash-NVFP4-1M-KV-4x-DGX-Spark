@@ -1,5 +1,15 @@
 # The GB10 KV-Memory Ladder: why your "free" memory is a lie
 
+> **SUPERSEDED 2026-08-29 — the mechanism here is right, the prescription is wrong.**
+> This document concludes "take vLLM's suggested `--kv-cache-memory` verbatim — every larger
+> value we tried died." Followed literally that caps you at roughly **1/6th** of what the
+> hardware holds. The deaths were caused by **page cache**, not by the pool size: we were
+> running a *threshold-triggered* flusher, which can sit below its threshold and still starve
+> the NVRM allocator. With `flusher-unconditional.sh`, a pinned 24 GiB/rank passes the full
+> gate suite. The page-cache analysis below is still accurate and worth reading.
+>
+> **Current config:** TP4, `--kv-cache-memory 25769803776` (24 GiB/rank) = **3,895,606 fp8 tokens** at 1,048,576 context, DFlash2 k=7, with `flusher-unconditional.sh`. See the [README](../README.md).
+
 Empirical study from 2026-08-26, six controlled boots of GLM-5.3-Flash (fp8 KV + MTP-4,
 ~96.6 GiB weights + ~5 GB draft head per rank) on 2x DGX Spark, TP2.
 
@@ -14,7 +24,7 @@ Empirical study from 2026-08-26, six controlled boots of GLM-5.3-Flash (fp8 KV +
 
 Mitigations tried, in escalating order — none moved the ceiling:
 1. `drop_caches` before launch (baseline ritual) — defeated: the 182 GiB shard read refills page cache during load.
-2. **Cache-flusher sidecar** ([`cache_flusher.sh`](../cache_flusher.sh)) holding Cached < 40 GiB through the load — got the head's 7.5 GiB allocation to succeed for the first time, but a rank still died in warmup.
+2. **Cache-flusher sidecar** (a *threshold-triggered* flusher, since removed — see [`flusher-unconditional.sh`](../flusher-unconditional.sh)) holding Cached < 40 GiB through the load — got the head's 7.5 GiB allocation to succeed for the first time, but a rank still died in warmup.
 3. **Full node reboot** before the attempt (fresh 117 GiB free pool) — the freshly-rebooted node still OOM'd during warmup.
 4. **cgroup memory cap** (`--memory 112g`) forcing continuous in-container reclaim — the *other* node OOM'd at the same instant its KV line printed.
 

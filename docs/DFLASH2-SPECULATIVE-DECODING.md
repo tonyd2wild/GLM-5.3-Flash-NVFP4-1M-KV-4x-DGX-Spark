@@ -14,9 +14,9 @@ this is the vLLM route, on consumer Blackwell, at tensor-parallel 2.
 | KV pool cost of the drafter | n/a | **~0** (parasitic slot-sharing, see below) |
 
 **2.15× single-stream decode over the MTP-4 baseline on identical hardware and
-context.** Concurrency curve: `docs/BENCH-C1-C6.md`.
+context.** Concurrency curve: `docs/BENCH-C1-C6-DFLASH2.md`.
 
-## What it takes (four patches, `overlay/`)
+## What it takes (four patches, `overlay-dflash2/`)
 
 vLLM at the fork point (`0.1.dev20051+g487ecf187`) ships DFlash**1** support but
 predates DFlash2 (upstream PR #52816, merged 2026-08-21), and GLM-5.3 could not
@@ -105,7 +105,7 @@ flat view under kernel-block splitting. Never pad a drafter spec; make it fit.
 
 ## Verification
 
-`overlay/sim_glm5_drafter.py` builds the real spec geometry (34 mamba + 11 MLA +
+`overlay-dflash2/sim_glm5_drafter.py` builds the real spec geometry (34 mamba + 11 MLA +
 11 indexer + 11 tail + 5 drafter SWA), forms groups, emulates tensor binding and
 `_reshape_kv_cache` **including the kernel-block split**, and asserts required
 storage ≤ bound tensor. It reproduces the boot-8 overrun exactly and passes with
@@ -130,4 +130,4 @@ Healthy runtime signatures:
 - Concurrency is bounded by free-memory headroom, not the pool: at
   `--kv-cache-memory 4445787956` a 3-way 20K-token prefill drove MemAvailable to
   3.06 GB and Tony's `dgx-anti-oom` watchdog (threshold 3 GB) killed the engine.
-  Shipping pin is **3221225472** (310,292-token pool) for headroom under load.
+  Shipping pin is **25769803776** (24 GiB/rank, 3,895,606-token pool at TP4/1M context). The 3221225472 / 310,292-token figure was the TP2 262K pin and is superseded.

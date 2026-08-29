@@ -1,5 +1,12 @@
 # nvfp4_ds_mla: 4-bit packed KV for GLM-5.3 on the SM120 sparse path — build spec
 
+> **PARKED — unfinished working spec from 2026-08-27, TP2-era numbers.** The NVFP4 KV lane
+> was subsequently brought up successfully; see the KV-lanes section of the
+> [README](../README.md) and `docs/OPEN-PROBLEMS.md`. This file is retained for its build
+> reasoning only. It references a `v10` Dockerfile that does not exist in `docker/`.
+>
+> **Current config:** TP4, `--kv-cache-memory 25769803776` (24 GiB/rank) = **3,895,606 fp8 tokens** at 1,048,576 context, DFlash2 k=7, with `flusher-unconditional.sh`. See the [README](../README.md).
+
 Status: IN PROGRESS (started 2026-08-27 ~04:30 UTC, Knox). Goal: halve the MLA KV bytes
 (432 B/token/layer vs 656 packed / 528 plain fp8) → ~600K tokens in the proven 4.14 GiB
 slab, ~900K-1M with a 5.5-6 GiB slab. Foundation: the working NoPE zero-pad shim (v10).

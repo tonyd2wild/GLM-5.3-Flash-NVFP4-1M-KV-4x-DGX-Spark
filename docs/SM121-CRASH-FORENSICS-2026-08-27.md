@@ -1,5 +1,14 @@
 # Why the fleet kept "randomly" dying — SM121 crash forensics (2026-08-27)
 
+> **Updated 2026-08-29.** *Disease 1 (the `persistent_topk` smem wall) is still real and its
+> patch is still bind-mounted by the shipping launcher — that section stands.* **Disease 2
+> ("phantom KV backing above ~16 GiB/rank") was misdiagnosed.** The real cause was
+> threshold-triggered page-cache flushing; with an unconditional flusher the same 24 GiB/rank
+> pin passes deep decode at 41K context and 3x concurrent 32,879-token prefills. The gate
+> suite in this document is unchanged and is still the bar.
+>
+> **Current config:** TP4, `--kv-cache-memory 25769803776` (24 GiB/rank) = **3,895,606 fp8 tokens** at 1,048,576 context, DFlash2 k=7, with `flusher-unconditional.sh`. See the [README](../README.md).
+
 A day of repeated engine deaths under real traffic turned out to be **two separate
 diseases**, misdiagnosed as one. Both are now fixed and both fixes ship in this repo.
 If your GB10/DGX Spark GLM deployment dies "randomly" under agent traffic, it is

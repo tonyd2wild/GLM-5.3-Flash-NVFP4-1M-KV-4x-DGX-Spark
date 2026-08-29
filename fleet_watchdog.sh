@@ -18,7 +18,7 @@ FAIL_THRESHOLD=3           # consecutive failures before recovery fires
 CURL_TIMEOUT=15            # per-probe timeout
 READY_TIMEOUT=3600         # matches VLLM_ENGINE_READY_TIMEOUT_S in launch script
 CONTAINER="vllm_glm53"
-LAUNCH_SCRIPT='~/launch-glm53-vllm-tp4.sh'   # same path on every node
+LAUNCH_SCRIPT='~/launch-glm53-tp4-24g.sh'   # same path on every node
 SSH_KEY="$HOME/.ssh/id_ed25519_shared"
 SSH_OPTS=(-i "$SSH_KEY" -o ConnectTimeout=15 -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
 LOCKFILE="$HOME/.fleet_watchdog.lock"
@@ -51,6 +51,15 @@ run_on() {  # run_on <rank> <command string>
 
 healthy() { curl -sf -m "$CURL_TIMEOUT" -o /dev/null "$HEALTH_URL"; }
 
+# The unconditional flusher MUST be running on EVERY node for the whole relaunch,
+# not just a one-shot drop_caches. A threshold-triggered flusher can sit below its
+# threshold and still starve the NVRM allocator, which is what made 24 GiB/rank fail
+# on 2026-08-27. See README, 'The flusher is the whole trick'.
+start_flusher() {
+  local rank="$1"
+  run_on "$rank" 'pkill -f flusher-unconditional.sh 2>/dev/null; setsid nohup bash "$HOME/flusher-unconditional.sh" >/tmp/flusher-unconditional.log 2>&1 < /dev/null & sleep 1; pgrep -f flusher-unconditional.sh >/dev/null && echo "flusher:RUNNING" || echo "flusher:FAILED"'
+}
+
 mem_ritual() {  # GB10 NVRM allocator hygiene (launch script requires it)
   local rank="$1"
   run_on "$rank" 'sync; echo 3 | sudo -n tee /proc/sys/vm/drop_caches >/dev/null || echo "WARN: drop_caches failed (sudo -n?)"; echo 1 | sudo -n tee /proc/sys/vm/compact_memory >/dev/null || echo "WARN: compact_memory failed"'
@@ -68,10 +77,13 @@ recover() {
   done
   sleep "$POST_TEARDOWN_SLEEP"
 
-  # 2. Memory ritual on all nodes AFTER teardown, BEFORE relaunch.
+  # 2. Memory ritual on all nodes AFTER teardown, BEFORE relaunch, then start the
+  #    unconditional flusher and leave it running through the entire boot.
   for r in "${RANK_ORDER[@]}"; do
     log "mem ritual on rank $r"
     mem_ritual "$r"
+    log "starting unconditional flusher on rank $r"
+    start_flusher "$r"
   done
 
   # 3. Relaunch: workers rank 3 -> 2 -> 1, then head rank 0.

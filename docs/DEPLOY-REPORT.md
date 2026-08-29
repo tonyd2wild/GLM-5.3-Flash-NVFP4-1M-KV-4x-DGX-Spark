@@ -1,5 +1,12 @@
 # GLM-5.3-Flash-NVFP4 TP2 Deployment Report — Reddie + Spark4
 
+> **HISTORICAL — 2026-08-26, TP2 / 262K / bf16 → fp8 + MTP-4.** Kept as the deploy-day record
+> of eight kernel-level bugs. **Do not take configuration from this file.** In particular its
+> closing recommendation to "ship thinking-on" is reversed: thinking is **off** by default in
+> the current launcher, opt-in per request.
+>
+> **Current config:** TP4, `--kv-cache-memory 25769803776` (24 GiB/rank) = **3,895,606 fp8 tokens** at 1,048,576 context, DFlash2 k=7, with `flusher-unconditional.sh`. See the [README](../README.md).
+
 Deployment date: 2026-08-26
 Endpoint: `http://100.113.138.96:8000/v1`
 Model: `glm-5.3-flash` (262,144-token context)

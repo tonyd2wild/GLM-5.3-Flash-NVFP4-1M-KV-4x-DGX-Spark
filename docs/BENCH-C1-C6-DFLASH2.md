@@ -1,5 +1,11 @@
 # DFlash2 concurrency sweep, C1–C6 (2026-08-28)
 
+> **Measured at TP2, 262K context, a 310,292-token pool (`--kv-cache-memory 3221225472`), 2026-08-28.**
+> These are *not* the shipping TP4 numbers — they are kept because they are the clean
+> DFlash2-vs-MTP-4 comparison at matched settings.
+>
+> **Current config:** TP4, `--kv-cache-memory 25769803776` (24 GiB/rank) = **3,895,606 fp8 tokens** at 1,048,576 context, DFlash2 k=7, with `flusher-unconditional.sh`. See the [README](../README.md).
+
 GLM-5.3-Flash-NVFP4 + `incoai/GLM-5.3-Flash-DFlash2`, TP2 on 2× DGX Spark (GB10),
 fp8 KV, 262,144-token context, `--max-num-seqs 6`, `--kv-cache-memory 3221225472`
 (310,292-token pool), thinking off. Harness: [`probes/bench_c1c6.py`](../probes/bench_c1c6.py)

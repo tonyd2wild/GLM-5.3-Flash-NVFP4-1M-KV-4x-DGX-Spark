@@ -1,51 +1,176 @@
-# GLM-5.3-Flash NVFP4 + DFlash2 · 1M-Token KV · 4x DGX Spark · 47 tok/s
+# GLM-5.3-Flash · DFlash2 · TP4 · 1M Context · 3.9M-Token KV
 
 > 🔀 **Only have two Sparks?** The same images run at TP2 (262K context) — see the sibling repo:
 > **[GLM-5.3-Flash NVFP4 + DFlash2 · 2x DGX Spark →](https://github.com/tonyd2wild/GLM-5.3-Flash-NVFP4-DFlash2-2x-DGX-Spark)**
 
-[zai-org/GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash) (320B / A18B MoE, released 2026-08-26) serving across **all four NVIDIA DGX Spark (GB10) nodes** at tensor-parallel 4, using the [LibertAIDAI/GLM-5.3-Flash-NVFP4](https://huggingface.co/LibertAIDAI/GLM-5.3-Flash-NVFP4) quant — deployed the same day the model dropped.
+[zai-org/GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash) (320B / A18B MoE)
+serving across **all four NVIDIA DGX Spark (GB10) nodes** at tensor-parallel 4, with the
+[`incoai/GLM-5.3-Flash-DFlash2`](https://huggingface.co/incoai/GLM-5.3-Flash-DFlash2)
+block-diffusion drafter, at the model's full 1,048,576-token context.
+
+---
+
+## The configuration
+
+**This is the current default. Everything else in this README is either an alternative lane
+or history — both are labelled as such.**
+
+| | |
+|---|---|
+| **KV pool** | **3,895,606 fp8 tokens** — 3.72x a full 1M-token context |
+| **Context** | **1,048,576** (model-native 1M) |
+| **KV pin** | `--kv-cache-memory 25769803776` (**24 GiB/rank**) |
+| **Speculative decoding** | **DFlash2**, `num_speculative_tokens: 7` |
+| Single stream | **54.5 tok/s** (see [Performance](#performance) — the prompt matters more than the config) |
+| Prefill | **4,141.8 tok/s** |
+| Weights | abliterated or stock NVFP4, drop-in either way |
+| Vision | on (`chat_template_mm.jinja`) |
+| Thinking | off by default |
+| Launcher | [`launch-glm53-tp4-24g.sh`](launch-glm53-tp4-24g.sh) |
+| Flusher | [`flusher-unconditional.sh`](flusher-unconditional.sh) — **required, and must be unconditional** |
+
+Gate-passed 2026-08-29: two deep decodes at ~41K context (392 and 399 decoded tokens),
+3x concurrent prefills at 32,879 tokens each, vision, `/health` 200 throughout. Residual
+after gates: head rank 15 GiB, workers 19-20 GiB.
+
+### The flusher is the whole trick
+
+For a week we believed GB10 had "phantom KV backing" above 16 GiB/rank — reservations that
+succeed but fault when touched under load. **It was the page cache.**
+
+We had been running a **threshold-triggered** flusher (drop caches only when `Cached > 40 GiB`).
+A threshold flusher can sit below its threshold and *still* leave the NVRM allocator short,
+which is exactly why the same command booted or OOM'd depending on the moment. Making it
+unconditional took the same 24 GiB pin that died on 2026-08-27 straight through the gate
+suite, for **+54.8 %** pool over the old 16 GiB default.
+
+Run it on every node, started before the launcher, for the entire boot. Credit to
+[tonyliu312](https://github.com/tonyliu312/GLM-5.3-Flash-DFlash2-TP4-1M-Context) for naming
+the requirement precisely.
+
+### Measure your own ceiling — do not paste ours
+
+24 GiB/rank is where **our** fleet lands, with 15 GiB residual on the head rank. Other
+operators run 28 and 32 GiB/rank on the same hardware. The head rank is always the binding
+constraint — it carries the API server and engine core on top of its shard — and startup
+free memory varies several GiB between otherwise identical nodes. Ladder up, and gate every
+step. **A config that boots and answers a short prompt is not a config that works.**
+
+---
+
+## Quickstart (4 nodes)
+
+One node owns the weights on local NVMe and NFS-exports them; the other three mount at the
+same path.
+
+The runtime image is public and anonymous-pullable — no build required:
+
+```bash
+# pull on ONE node, then fan out over your internal fabric.
+# four nodes pulling a 31 GB image concurrently hits GHCR rate limits.
+docker pull ghcr.io/tonyd2wild/vllm-glm53-flash:sm121-v11-dflash2
+docker save ghcr.io/tonyd2wild/vllm-glm53-flash:sm121-v11-dflash2   | zstd -3 -T8 | ssh <peer> "zstd -d | docker load"
+```
+
+```bash
+# every node: weights visible + UNCONDITIONAL flusher running first
+ls /var/tmp/models/keys-glm-5.3-flash-nvfp4-ablit-l15-45-anchorstock/config.json
+sync; echo 3 | sudo tee /proc/sys/vm/drop_caches
+setsid nohup ./flusher-unconditional.sh > flusher.log 2>&1 &
+
+# workers first, head LAST
+./launch-glm53-tp4-24g.sh 3   # worker
+./launch-glm53-tp4-24g.sh 2   # worker
+./launch-glm53-tp4-24g.sh 1   # worker
+./launch-glm53-tp4-24g.sh 0   # head - serves http://<head>:8000/v1
+```
+
+Edit the rank->IP map at the top of the launcher for your fabric. Boot is ~20 min: weight
+load, drafter load, KV allocation, warmup. Thinking is off by default; re-enable per request
+with `chat_template_kwargs: {"enable_thinking": true}` — no restart needed. Tool calling
+ships enabled (`glm47` parser).
+
+### Verify the boot
+
+```
+GPU KV cache size: 3,895,606 tokens, Maximum concurrency for 1,048,576 tokens per request: 3.72x
+```
+
+Then gate it before you trust it — the suite is in
+[docs/SM121-CRASH-FORENSICS-2026-08-27.md](docs/SM121-CRASH-FORENSICS-2026-08-27.md).
+
+---
 
 ## Weights: censored or uncensored (drop-in)
 
-Pick your weights: **same launcher, same recipe**, just point the model path at either. Both are NVFP4 and load identically.
+Same launcher, same recipe — just point the model path at either. Both are NVFP4 and load
+identically.
 
 | | HuggingFace | notes |
 |---|---|---|
 | **Censored** | [LibertAIDAI/GLM-5.3-Flash-NVFP4](https://huggingface.co/LibertAIDAI/GLM-5.3-Flash-NVFP4) | stock GLM-5.3-Flash, NVFP4 weight-only |
 | **Uncensored (abliterated)** | [drowzeys/keys-GLM-5.3-Flash-NVFP4-ablit-l15-45-anchorstock](https://huggingface.co/drowzeys/keys-GLM-5.3-Flash-NVFP4-ablit-l15-45-anchorstock) | abliterated (layers 15-45, anchor-stock), no refusals |
 
-Uncensored abliteration credit: [drowzeys/keys](https://github.com/drowzeys).
+Abliteration credit: [drowzeys/keys](https://github.com/drowzeys).
 
+---
 
-## DFlash2 speculative decoding — 46.9 tok/s single-stream (2026-08-28)
+## Performance
 
-**First working DFlash2 deployment of GLM-5.3-Flash on GB10.** The
-[`incoai/GLM-5.3-Flash-DFlash2`](https://huggingface.co/incoai/GLM-5.3-Flash-DFlash2)
-block-diffusion drafter — published for SGLang — now runs on the vLLM route:
-**46.9 tok/s single-stream vs 21.8 for MTP-4 (2.15x)** at **74.1 % draft
-acceptance**, costing **zero KV pool** (the drafter's layers slot-share the MLA
-tensors like GLM's own mamba layers). Measured at TP2, 262K context; the same
-overlay applies to this TP4 recipe.
+**54.5 tok/s single stream** (408 tokens in 7.5 s, "write a function then explain it",
+temperature 0, thinking off) on the gate-passing boot. **4,141.8 tok/s prefill.**
 
-Concurrency sweep (TP2, zero failures): C1 35.1 · C2 41.6 · C3 40.6 · C4 47.5 ·
-**C5 56.2** · C6 47.7 aggregate tok/s.
+**Read this before quoting any speed number, including ours.** Draft acceptance on this
+model is *content-driven, not config-driven* — roughly 0.70+ on structured/code output and
+~0.33 on freeform prose, measured minutes apart on the same engine. `ms/step` barely moves;
+what changes is how many of the drafter's 7 positions survive. So a single-stream tok/s
+figure is really a statement about the prompt. **Quote the prompt or the number is
+meaningless.** Cumulative acceptance across our gate suite was 0.271, but that suite was
+deliberately prose-heavy and understates normal traffic.
 
-Method, the nine-boot failure ladder, and the KV-layout fix that keeps GLM on its
-custom fast path: **[docs/DFLASH2-SPECULATIVE-DECODING.md](docs/DFLASH2-SPECULATIVE-DECODING.md)**
-· bench detail: [docs/BENCH-C1-C6-DFLASH2.md](docs/BENCH-C1-C6-DFLASH2.md)
-· reproducible overlay: [`overlay-dflash2/`](overlay-dflash2/)
+`--max-num-batched-tokens 8192` is set. Left unset, vLLM derives 2048 from the speculative
+settings and warns that this is suboptimal. The ladder on a 32K prompt — 2048 -> 4096 ->
+8192 for -29 % TTFT and +42 % prefill at about +1 GiB — is
+[tonyliu312's measurement](https://github.com/tonyliu312/GLM-5.3-Flash-DFlash2-TP4-1M-Context);
+we adopted the flag and confirmed the direction at TP4.
 
-**As far as we can tell: the first TP4 `glm5_next` deployment outside NVIDIA B200 hardware, the first fp8 KV cache for a NoPE-MLA model on any consumer Blackwell part, and a 1.26-million-token KV pool on $16K of desk hardware.**
+### DFlash2
 
-## Two KV-cache lanes + censored/uncensored (added 2026-08-27)
+**First working DFlash2 deployment of GLM-5.3-Flash on GB10.** The drafter was published for
+SGLang; this repo carries the vLLM route. It costs **zero KV pool** — its layers slot-share
+the MLA tensors the way GLM's own mamba layers do — and its 7 positions come from a single
+parallel pass, so the step does not get longer, it just carries more accepted tokens.
 
-This TP4 deployment now ships as a **2×2** — pick your KV-cache format and your weights:
+At TP2/262K it measured 46.9 tok/s vs 21.8 for MTP-4 (2.15x) at 74.1 % acceptance, with a
+concurrency sweep of C1 35.1 · C2 41.6 · C3 40.6 · C4 47.5 · **C5 56.2** · C6 47.7 aggregate.
+*Those are TP2 numbers, kept for the MTP-4 comparison; this repo's config is TP4.*
 
-|  | **Lane A — fp8 KV** (our FlashInfer SM12x unlock) | **Lane B — NVFP4 KV** (b12x path, credit [keys/drowzeys](https://github.com/drowzeys/keys-vLLm.0.27.1-GLM-5.3-Flash-NVFP4-NVFP4KV-1M-Context-Abliterated)) |
+Method, the nine-boot failure ladder, and the KV-layout fix that keeps GLM on its custom fast
+path: **[docs/DFLASH2-SPECULATIVE-DECODING.md](docs/DFLASH2-SPECULATIVE-DECODING.md)** ·
+bench detail: [docs/BENCH-C1-C6-DFLASH2.md](docs/BENCH-C1-C6-DFLASH2.md) · reproducible
+overlay: [`overlay-dflash2/`](overlay-dflash2/)
+
+---
+
+## KV-cache lanes: fp8 (default) vs NVFP4
+
+**fp8 is the daily driver** — faster, simpler to operate, and what the config above ships.
+**NVFP4 KV is the flex lane** for the rare job that needs pool capacity over throughput.
+
+| | **fp8 KV** (default) | **NVFP4 KV** (flex) |
 |---|---|---|
-| **KV size** | ~656 B/token/layer | **368 B/token/layer** (~half) |
-| **Censored** ([LibertAIDAI](https://huggingface.co/LibertAIDAI/GLM-5.3-Flash-NVFP4)) | ✅ TP4 flagship — 5.03M-token pool | compatible (not separately benched) |
-| **Uncensored** ([keys ablit](https://huggingface.co/drowzeys/keys-GLM-5.3-Flash-NVFP4-ablit-l15-45-anchorstock)) | ✅ drop-in — same launcher, verified | ✅ **TP4: 6,652,112-token pool = 6.34× a full 1M context** (32 GiB/rank) |
+| KV density | 656 B/token/layer | **368 B/token/layer** |
+| Decode (structured, warmed) | **~55 tok/s** | ~37 tok/s |
+| Pool at equal 32 GiB/rank | 5,033,164 | **6,652,112** (1.32x) |
+
+The trade is clean: **NVFP4 buys capacity, fp8 buys speed.** Note the pool figures in that
+row were measured at a **32 GiB/rank** pin during the 2026-08-27 lane comparison, not at the
+24 GiB default above — they are a like-for-like comparison between formats, not this repo's
+shipped numbers.
+
+Both `nvfp4_ds_mla` KV and `cudagraph_mode: FULL` have since been confirmed working alongside
+DFlash2 on this fleet, closing two entries in
+[docs/OPEN-PROBLEMS.md](docs/OPEN-PROBLEMS.md).
 
 ### Lane B — NVFP4 KV at TP4 (verified serving, 2026-08-27)
 
@@ -77,77 +202,76 @@ The density win above is **not free** — we ran both lanes back-to-back on the 
 
 **What this means:** NVFP4 KV's ~33 % slower decode is the b12x `B12X_MLA_SPARSE` sparse-attention path (+ the per-token NVFP4 dequant) doing more compute per step than fp8's marlin path — and `--enforce-eager`, which the b12x kernels require, caps single-stream on both lanes. So the trade is clean: **NVFP4 = KV *capacity* (bigger context pool at equal VRAM), fp8 = *speed* (faster tokens for the same agent work).** For our production endpoint we run **fp8 as the daily driver** (faster, uncensored, vision, simplest to operate) and keep **NVFP4 as the flex** for the rare job that needs the giant pool over throughput.
 
-## Numbers
+---
 
-| Metric | TP4 flagship |
-|---|---|
-| Decode | **35.7 tok/s** generic median · **up to 63.8 tok/s** warmed on structured/agentic output (MTP acceptance runs hot — [re-bench below](#warmed-streaming-re-bench--the-357-is-a-floor-not-the-ceiling-2026-08-27)) |
-| TTFT | **0.204 s median** |
-| Context | **1,048,576 (model-native 1M) — launcher default** · the 1.26M-token KV pool physically holds a full 1M-token request. Cap --max-model-len lower (e.g. 300000) for a snappier multi-user endpoint |
-| KV pool | **5,033,164 tokens fp8** — 4.82 concurrent full-context requests (or one ~1M-token context) |
-| Speculative decode | native MTP head, 4 draft tokens |
-| KV dtype | fp8_e4m3 (our FlashInfer SM12x unlock — see below) |
-| Boot | ~12 min (quarter weights per rank) |
+## Hard-won rules (each one cost us a boot)
 
-Progression on the same hardware pair count: 14.3 tok/s (day-1 bf16 TP2) → 21.8 (fp8+MTP TP2) → **35.7 (TP4)**.
+1. **The cache flusher must be unconditional**, on every node, for the whole boot. A
+   threshold-triggered one silently starves the allocator.
+2. Tear down **all** ranks before relaunching **any** — a fresh rank that rendezvouses with
+   a dying one hangs.
+3. Verify `grep '^IMAGE'` matches on every node before every launch; copy launcher files
+   whole, never `sed` over ssh.
+4. **Gate with a long prompt AND a long answer.** `persistent_topk` crashes on decode
+   *steps* past ~24K context, so a 49K prompt with a one-line answer proves nothing — ours
+   decoded 15 tokens and passed meaninglessly. Force >=100 completion tokens, and vary the
+   prompt per run or the prefix cache turns a 30 s gate into a 2 s no-op.
+5. The bar is **concurrent** prefills, not one. 32 GiB passed a single-prefill gate and then
+   died under three overlapping requests.
+6. Reboot a node that has been through many boot cycles — GB10's driver accumulates
+   allocation-pool degradation that eventually kills even proven configs.
+7. Capture `docker logs` before `docker rm -f`.
 
-### Warmed streaming re-bench — the 35.7 is a floor, not the ceiling (2026-08-27)
-
-The 35.7 median above is a **generic 200-token greedy** number. Re-benched **warmed + streaming** (decode = `(completion_tokens − 1) / (t_last − t_first)`, measured off-box over the tailnet, temp 0), throughput is strongly **content-regime dependent** because the MTP head's draft-acceptance rate swings with how predictable the output is:
-
-| Prompt | Decode (warmed) |
-|---|---:|
-| 🔢 **count 1→100** (structured) | **63.8 tok/s peak · ~61 median** (6 runs) |
-| 🔤 alphabet ×8 | ~60 |
-| 💻 code continuation | ~53 |
-| 📝 freeform 400-word essay | ~37 |
-
-So the honest picture: **freeform prose ≈ 37 (that's where the "36" comes from), but structured / list / code / tool-argument output — what agents actually generate — runs 53–64 tok/s** as MTP acceptance approaches 100%. Real agentic workloads live in the high-acceptance zone, so **~55–64 tok/s is the number that matters in production**, roughly 1.7× the headline. TTFT stays ~0.2 s across all regimes.
+---
 
 ## What's in here
 
-- [`launch-glm53-vllm-tp4.sh`](launch-glm53-vllm-tp4.sh) — the 4-rank launcher (head serves `:8000`; run worker-first: rank 3 → 2 → 1, head 0 last). Full NCCL fabric env included.
-- [`cache_flusher.sh`](cache_flusher.sh) — **required sidecar** on every node during boot. GB10's driver fails allocations against page-cache-full memory; this holds the cache down through the 182 GiB shard read. Mechanism + measurements: [docs/GB10-KV-MEMORY-LADDER.md](docs/GB10-KV-MEMORY-LADDER.md).
-- [`docker/`](docker/) — the **sm121-v8 image patch stack** (8 Dockerfiles, applied v1→v8 on the day-0 `vllm/vllm-openai:glm53-flash-arm64-cu130`). The vendor image dies five different ways on GB10; these fix: the NoPE-MLA backend gap, a FlashInfer FA2 NaN kernel bug, two dependency downgrades the FlashInfer nightly sneaks in (NCCL, cutlass-dsl), a PDL race surface, uninitialized indexer top-k memory, and the fp8-KV shared-memory tile bug.
-- [`docs/DEPLOY-REPORT.md`](docs/DEPLOY-REPORT.md) — every failure, root cause, and receipt from the deploy day (eight kernel-level bugs).
-- [`docs/`](docs/) issue drafts — upstream-ready reports for the FlashInfer fp8-MLA SM12x gap and the vLLM NoPE `fp8_ds_mla` layout gap.
-- [`probes/`](probes/) — the debugging kit: probe a FlashInfer kernel with your model's real geometry before trusting arch-gate patches, a NaN bisect harness, kernel-vs-torch A/B, and the benchmark script.
+- [`launch-glm53-tp4-24g.sh`](launch-glm53-tp4-24g.sh) — **the current launcher**. Head serves
+  `:8000`; run worker-first (rank 3 -> 2 -> 1, head 0 last). Full NCCL fabric env included.
+- [`flusher-unconditional.sh`](flusher-unconditional.sh) — **required sidecar** on every node
+  during boot. Mechanism and measurements: [docs/GB10-KV-MEMORY-LADDER.md](docs/GB10-KV-MEMORY-LADDER.md).
+- [`chat_template_mm.jinja`](chat_template_mm.jinja) — **required for vision.** The checkpoint
+  ships a text-only template; image requests 500 without this.
+- [`docker/`](docker/) — the image patch stack (v1 -> v9) applied to the day-0
+  `vllm/vllm-openai:glm53-flash-arm64-cu130`. Fixes the NoPE-MLA backend gap, a FlashInfer FA2
+  NaN kernel bug, two dependency downgrades the FlashInfer nightly sneaks in, a PDL race
+  surface, uninitialized indexer top-k memory, and the fp8-KV shared-memory tile bug.
+> **On image provenance:** the shipping tag `sm121-v11-dflash2` is `docker/` v1->v9 plus the
+> DFlash2 overlay in [`overlay-dflash2/`](overlay-dflash2/); there is no standalone `v11`
+> Dockerfile here. Pull the published image rather than rebuilding unless you are changing the
+> patch stack.
 
-## Quickstart (4 nodes)
+- [`overlay-dflash2/`](overlay-dflash2/) — the DFlash2 vLLM overlay: patches plus a CPU
+  simulator that validates the KV geometry before you boot a node.
+- [`docs/SM121-CRASH-FORENSICS-2026-08-27.md`](docs/SM121-CRASH-FORENSICS-2026-08-27.md) — the
+  two diseases behind "random" deaths, and the gate suite.
+- [`docs/DEPLOY-REPORT.md`](docs/DEPLOY-REPORT.md) — every failure and receipt from deploy day.
+- [`probes/`](probes/) — the debugging kit: kernel probes with real model geometry, a NaN
+  bisect harness, kernel-vs-torch A/B, and the benchmark script.
 
-One node owns the weights on local NVMe and NFS-exports them; the other three mount at the same path.
+---
 
-```bash
-# every node: image + weights visible + flusher
-docker load < sm121-v8.tar          # or build docker/Dockerfile.glm53-sm121* v1->v8 in order
-ls /var/tmp/glm-5.3-flash-nvfp4/config.json
-nohup ./cache_flusher.sh > flusher.log 2>&1 &
-sync; echo 3 | sudo tee /proc/sys/vm/drop_caches
+## Superseded configurations
 
-# workers first, ~20 s apart, head LAST
-./launch-glm53-vllm-tp4.sh 3   # worker
-./launch-glm53-vllm-tp4.sh 2   # worker
-./launch-glm53-vllm-tp4.sh 1   # worker
-./launch-glm53-vllm-tp4.sh 0   # head — serves http://<head>:8000/v1
-```
+Kept for the record. **Do not deploy these** — the current config is at the top.
 
-Edit the rank→IP map at the top of the launcher for your fabric. Thinking is off by default (`--default-chat-template-kwargs`); re-enable per request with `chat_template_kwargs: {"enable_thinking": true}`. Tool calling ships enabled (`glm47` parser).
+| date | config | pool | why superseded |
+|---|---|---|---|
+| 2026-08-27 | 16 GiB/rank fp8, TP4 | 2,516,582 | 24 GiB now passes gates with the unconditional flusher (+54.8 %) |
+| 2026-08-27 | 32 GiB/rank | 5,033,164 | passed a single-prefill gate, died under three concurrent requests |
+| 2026-08-27 | 38 GiB/rank | 5,975,779 | allocates and boots, then the first 20K prefill NVRM-OOMs a rank |
+| earlier | TP4 with MTP-4 (no DFlash2) | — | DFlash2 is faster at zero KV cost |
+
+The 38 GiB case is the cautionary one: it allocates cleanly, boots, and answers short prompts
+before dying. On GB10, "serving" is not the bar.
+
+---
 
 ## Fast loading: InstantTensor (added 2026-08-27)
 
 **Status: experimental — 15x load speedup measured, but NOT stable in our multi-node TP2 topology** (a rank dies silently ~1 min post-load in every v9 boot, at any KV size, including budgets that are 100% stable on v8; cf. eugr/spark-vllm-docker#29 for the same multi-node class of problem). The shipped launchers do NOT enable it; the stable image remains v8. The v9 image adds the InstantTensor direct-I/O loader (`--load-format instanttensor`): loads drop from ~10 minutes to 40-100 seconds. Two things to know: its pip install silently downgrades NCCL to a fabric-fatal version (v9 re-pins 2.30.7 in the same layer), and because direct I/O never fills the page cache, it also defeats the first layer of the GB10 KV-allocation wall -- the full story and the remaining (unsolved) second wall are in [docs/GB10-KV-MEMORY-LADDER.md](docs/GB10-KV-MEMORY-LADDER.md). Credit: jack6464 (NVIDIA forum) for the pointer.
 
-## Hard-won rules (each one cost us a boot)
-
-1. Tear down **all** ranks before relaunching **any** — a fresh rank that rendezvouses with a dying one hangs.
-2. Verify `grep '^IMAGE'` matches on every node before every launch; copy launcher files whole, never sed over ssh.
-3. Run the cache flusher during every boot; on TP2-class per-rank weights, take vLLM's suggested `--kv-cache-memory` verbatim (the ladder study shows why bigger dies).
-4. Reboot a node that has been through many boot cycles — GB10's driver accumulates allocation-pool degradation that eventually kills even proven configs.
-5. Capture `docker logs` before `docker rm -f`.
-
-## Why TP4 (beyond speed)
-
-At TP2 each rank carries ~97 GiB of weights and the GB10 driver can only reliably grant ~4.5 GiB of KV afterward (measured across six controlled boots — see the ladder study). At TP4, weights drop to ~50 GiB per rank and the KV ceiling simply dissolves: the 9 GiB slab allocates with ~60 GiB of slack, giving every one of the six request slots full 262K context simultaneously.
+---
 
 ## vLLM v0.28.0 status (checked 2026-08-27)
 
@@ -158,79 +282,24 @@ The day-0 image used here is itself a main-branch dev snapshot (`0.1.dev20051`) 
 the 0.28 branch point -- i.e. this stack already runs 0.28-era engine code plus the GLM
 support 0.28 lacks. Upgrade path when it opens: watch the PR and the Docker Hub tags; the
 patch stack here is guarded string-patches that apply-or-refuse loudly, so porting to a new
-base is mechanical (apply v1->v10 in order, fix whichever guards fire, ladder through the
+base is mechanical (apply v1->v9 in order, fix whichever guards fire, ladder through the
 experiment lane before production).
+
+---
 
 ## Credits
 
-Model: [zai-org/GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash) · Quant: [LibertAIDAI/GLM-5.3-Flash-NVFP4](https://huggingface.co/LibertAIDAI/GLM-5.3-Flash-NVFP4) · barrydeen (gmu reference + quant table) · vLLM [PR #53906](https://github.com/vllm-project/vllm/pull/53906) authors for the day-0 image · FlashInfer 0.6.18 · Deployed and debugged by Knox (Claude) for [@tonyd2wild](https://github.com/tonyd2wild). TP4 measurement, the `--max-num-batched-tokens` ladder and the unconditional-flusher finding: [tonyliu312](https://github.com/tonyliu312/GLM-5.3-Flash-DFlash2-TP4-1M-Context) · Companion deep-dive repo: [GLM-5.3-Flash-NVFP4-262K-2x-DGX-Spark](https://github.com/tonyd2wild/GLM-5.3-Flash-NVFP4-262K-2x-DGX-Spark).
+Model: [zai-org/GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash) ·
+Quant: [LibertAIDAI/GLM-5.3-Flash-NVFP4](https://huggingface.co/LibertAIDAI/GLM-5.3-Flash-NVFP4) ·
+DFlash2 drafter: [incoai/GLM-5.3-Flash-DFlash2](https://huggingface.co/incoai/GLM-5.3-Flash-DFlash2) ·
+NVFP4-KV lane, Zero-RoPE shim, b12x kernels and the ablit weights:
+[drowzeys / keys](https://github.com/drowzeys/keys-vLLm.0.27.1-GLM-5.3-Flash-NVFP4-NVFP4KV-1M-Context-Abliterated) ·
+the `--max-num-batched-tokens` ladder and the unconditional-flusher requirement:
+[tonyliu312](https://github.com/tonyliu312/GLM-5.3-Flash-DFlash2-TP4-1M-Context) ·
+barrydeen (gmu reference + quant table) · vLLM [PR #53906](https://github.com/vllm-project/vllm/pull/53906)
+authors for the day-0 image · FlashInfer 0.6.18 · Luke Alonso (b12x) ·
+jack6464 (InstantTensor pointer).
 
-## Default KV pool raised to 3,895,606 tokens — 24 GiB/rank (2026-08-29, gate-passed)
-
-**The shipped default is now `--kv-cache-memory 25769803776` (24 GiB/rank) = 3,895,606 fp8
-tokens at `--max-model-len 1048576`, 3.72x concurrent full-1M-context requests.** That is
-**+54.8 %** over the previous 16 GiB / 2,516,582 default.
-
-24 GiB is the same pin that **died** on 2026-08-27 under combined load. It passes now because
-of one change, and it is not a vLLM flag:
-
-**The page-cache flusher must be unconditional.** We previously ran a threshold-triggered
-flusher (drop caches only when `Cached > 40 GiB`). A threshold flusher can sit below its
-threshold and still leave the NVRM allocator short — which is why the same command booted or
-OOM'd depending on the moment, and why "phantom backing above 16 GiB" looked like a hardware
-ceiling. It was page cache. Run [`flusher-unconditional.sh`](flusher-unconditional.sh) on
-every node, started before the launcher, for the entire boot. Credit to
-[tonyliu312](https://github.com/tonyliu312/GLM-5.3-Flash-DFlash2-TP4-1M-Context) for naming
-this precisely.
-
-Gate results at 24 GiB (all in one session, engine healthy after each, `/health` 200 throughout):
-
-| gate | result |
-|---|---|
-| deep decode past the topk wall | 41,420-token prompt → **392 decoded tokens** |
-| repeat deep decode, cache-defeating salt | 41,426-token prompt → **399 decoded tokens**, 47.3 s |
-| 3x concurrent prefills | **32,879 tokens each**, all three completed, 8.4 s |
-| vision (mm template) | correct description returned |
-| residual memory after gates | head rank **15 GiB**, workers 19-20 GiB |
-
-The deep-decode gates are the ones that matter: 392 and 399 decode *steps* at 41K context is
-well past the ~24K `persistent_topk` trigger that killed the engine in August. A long prompt
-with a short answer does **not** test this — our first attempt decoded only 15 tokens and
-proved nothing. Force >=100 completion tokens or the gate is theatre.
-
-### Speed on this config
-
-**54.5 tok/s single stream** (408 tokens in 7.5 s, "write a function then explain it",
-temperature 0, thinking off) on the same boot that passed the gates above.
-
-Cumulative draft acceptance across the whole gate suite was **0.271**, but that figure is
-dominated by two deliberately prose-heavy 400-token deep-decode gates and understates normal
-traffic — acceptance on this model is content-driven, not config-driven (0.70+ on
-structured/code, ~0.33 on freeform prose, measured minutes apart on the same engine). Any
-single-stream tok/s number for DFlash2 is really a statement about the prompt. Quote the
-prompt or the number means nothing.
-
-### `--max-num-batched-tokens 8192` is now set
-
-Left unset, vLLM derives 2048 from the speculative settings and warns that this is
-suboptimal. At 8192 we measure **4,141.8 tok/s prefill throughput** on this TP4 config. The
-ladder on a 32K prompt (2048 -> 4096 -> 8192 giving -29 % TTFT and +42 % prefill for about
-+1 GiB) is [tonyliu312's measurement](https://github.com/tonyliu312/GLM-5.3-Flash-DFlash2-TP4-1M-Context);
-we adopted the flag and confirmed the direction at TP4.
-
-### Measure your own ceiling — do not paste ours
-
-24 GiB/rank is where **our** fleet lands with 15 GiB residual on the head rank. Other
-operators run 28 and 32 GiB/rank on the same hardware. The head rank is always the binding
-constraint (it carries the API server and engine core on top of its shard), and startup free
-memory varies several GiB between otherwise identical nodes. Ladder up, and gate every step
-with the suite above — a config that boots and answers a short prompt is not a config that
-works.
-
-## 5M-token KV pool at 1M context (2026-08-27, stress-gated)
-
-The **historical** config was 16 GiB KV per rank = 2,516,582 fp8 tokens (superseded 2026-08-29 by the 24 GiB default above) (see docs/SM121-CRASH-FORENSICS-2026-08-27.md for why bigger pools fail) at `--max-model-len 1048576` — 3.6 concurrent full-1M-context requests. Found via the **residual-headroom rule**: grow the KV slab until only ~8-10 GB stays available per node (nodes idle at ~37-42 GB available on the old 9 GiB config).
-
-**The 38 GiB cautionary tale:** 38 GiB/rank (5,975,779 tokens) allocates cleanly, boots, and answers short prompts — then the first 20K-token prefill NVRM-OOMs a rank and the engine dies. On GB10, "serving" is not the bar; **gate every KV bump behind a real long prefill** with the engine verified alive afterward. 32 GiB passed a single-prefill gate, then died under three overlapping real-traffic requests (head rank carries API server + NFS duty). The bar is CONCURRENT prefills: 24 GiB survives 3x simultaneous 20K prefills with ~18 GB residual on the head.
-
-Also required for vision requests: `--chat-template chat_template_mm.jinja` (the checkpoint ships a text-only template; image requests 500 without the mm variant).
+Deployed and debugged by Knox (Claude) for [@tonyd2wild](https://github.com/tonyd2wild).
+Sibling repos: [TP2 / 262K](https://github.com/tonyd2wild/GLM-5.3-Flash-NVFP4-DFlash2-2x-DGX-Spark) ·
+[262K deep-dive](https://github.com/tonyd2wild/GLM-5.3-Flash-NVFP4-262K-2x-DGX-Spark).
