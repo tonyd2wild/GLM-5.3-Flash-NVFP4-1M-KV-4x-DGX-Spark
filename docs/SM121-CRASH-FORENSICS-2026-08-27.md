@@ -49,6 +49,14 @@ decode step now completes ("DEEP-DECODE-OK"), engine healthy after.
 **Upstream ask:** `topk.cu:138` should fall back to a multi-wave persistent variant
 instead of raising when smem < 128KB.
 
+> **Cleaner Disease-1 fix (verified 2026-08-28):** the SM-count gate above works but routes
+> small-SM parts onto the fallback kernel. A second, cleaner fix — routing the fused top-k
+> through **exact `torch.topk`** on sm_12x, matching upstream vLLM PR #49897 and the
+> `dots3-note-gb10-vllm` runtime — is in [`TOPK-OVERSUSCRIPTION-FIX.md`](TOPK-OVERSUSCRIPTION-FIX.md)
+> (`docker/topkfix/patch_kpool_topk.py`). Verified live: 4/4 concurrent long-context requests
+> clean, no `EngineDeadError`. If you use the topkfix image, **do not** bind-mount
+> `sparse_attn_indexer_kpool_sm121.py` — the baked-in fix would be overwritten.
+
 ## Disease 2 — phantom KV backing above ~16 GiB/rank on TP4
 
 With disease 1 patched, a second failure surfaced: at 24 GiB/rank KV, combined load
