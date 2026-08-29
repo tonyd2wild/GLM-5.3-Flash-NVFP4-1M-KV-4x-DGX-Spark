@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # GLM-5.3-Flash-NVFP4 ABLITERATED, TP4 across four Sparks. Head = Reddie (192.168.192.2).
-# Delta vs GOLDEN: --kv-cache-memory 16->24 GiB, added --max-num-batched-tokens 8192.
+# EDIT FOR YOUR FABRIC: MODEL_HOST_PATH, the rank->IP map below, and the NCCL block
+# (NCCL_IB_HCA, NCCL_IB_ADDR_RANGE, NCCL_SOCKET_IFNAME/GLOO/TP/MN). --memory 112g
+# assumes 128 GB nodes.
+# PREREQS on every node, or this boots and then fails in non-obvious ways:
+#   $HOME/patches/sparse_attn_indexer_kpool.py   <- cp from docker/sparse_attn_indexer_kpool_sm121.py
+#   /var/tmp/models/GLM-5.3-Flash-DFlash2/       <- the drafter weights
+#   $MODEL_HOST_PATH/chat_template_mm.jinja      <- required for vision (mount is :ro)
 # Vision ON (mm template), thinking OFF. Launch WORKER-FIRST: 3 -> 2 -> 1 -> head 0.
 NODE_RANK="${1:?usage: launch-glm53-tp4-24g.sh <0|1|2|3>}"
 
-IMAGE="radixark/vllm-glm53-flash:sm121-v11-dflash2"
+IMAGE="ghcr.io/tonyd2wild/vllm-glm53-flash:sm121-v11-dflash2"
 NAME="vllm_glm53"
 MODEL_HOST_PATH="/var/tmp/models/keys-glm-5.3-flash-nvfp4-ablit-l15-45-anchorstock"
 MODEL_PATH="/models/glm-5.3-flash-nvfp4"
@@ -22,7 +28,11 @@ case "$NODE_RANK" in
   *) echo "rank must be 0-3" >&2; exit 2 ;;
 esac
 
-test -f "$MODEL_HOST_PATH/config.json"
+# Fail loudly on missing prereqs rather than letting Docker create empty dirs over them.
+test -f "$MODEL_HOST_PATH/config.json"       || { echo "MISSING: $MODEL_HOST_PATH/config.json" >&2; exit 3; }
+test -f "$MODEL_HOST_PATH/chat_template_mm.jinja" || { echo "MISSING: chat_template_mm.jinja in the weights dir (vision will 500)" >&2; exit 3; }
+test -f "$HOME/patches/sparse_attn_indexer_kpool.py" || { echo "MISSING: \$HOME/patches/sparse_attn_indexer_kpool.py -- cp it from docker/sparse_attn_indexer_kpool_sm121.py. Without it the engine dies on every decode past ~24K context." >&2; exit 3; }
+test -f /var/tmp/models/GLM-5.3-Flash-DFlash2/config.json || { echo "MISSING: drafter weights at /var/tmp/models/GLM-5.3-Flash-DFlash2" >&2; exit 3; }
 mkdir -p "$CACHE_HOST_PATH"
 docker rm -f "$NAME" 2>/dev/null || true
 

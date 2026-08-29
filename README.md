@@ -63,38 +63,91 @@ step. **A config that boots and answers a short prompt is not a config that work
 One node owns the weights on local NVMe and NFS-exports them; the other three mount at the
 same path.
 
-The runtime image is public and anonymous-pullable — no build required:
+**Before anything: what you must edit for your own hardware.** The launcher is written for our
+fabric. Change `MODEL_HOST_PATH`, the rank->IP map, and the NCCL block (`NCCL_IB_HCA`,
+`NCCL_IB_ADDR_RANGE`, `NCCL_SOCKET_IFNAME`/`GLOO`/`TP`/`MN`). `--memory 112g` assumes 128 GB
+nodes. Get the NCCL values wrong and you hang at rendezvous with very little in the log.
+
+### 1. Image — pull once, fan out
+
+Public and anonymous-pullable; no build required.
 
 ```bash
-# pull on ONE node, then fan out over your internal fabric.
-# four nodes pulling a 31 GB image concurrently hits GHCR rate limits.
+# ONE node pulls. Four nodes pulling a 31 GB image concurrently hits GHCR rate limits.
 docker pull ghcr.io/tonyd2wild/vllm-glm53-flash:sm121-v11-dflash2
-docker save ghcr.io/tonyd2wild/vllm-glm53-flash:sm121-v11-dflash2   | zstd -3 -T8 | ssh <peer> "zstd -d | docker load"
+docker save ghcr.io/tonyd2wild/vllm-glm53-flash:sm121-v11-dflash2 \
+  | zstd -3 -T8 | ssh <peer> "zstd -d | docker load"
 ```
 
-```bash
-# every node: weights visible + UNCONDITIONAL flusher running first
-ls /var/tmp/models/keys-glm-5.3-flash-nvfp4-ablit-l15-45-anchorstock/config.json
-sync; echo 3 | sudo tee /proc/sys/vm/drop_caches
-setsid nohup ./flusher-unconditional.sh > flusher.log 2>&1 &
+### 2. Weights and files — on every node
 
-# workers first, head LAST
+Four things must exist, and **three of them fail in non-obvious ways if missing**, because
+Docker silently creates an empty directory over a bind-mount source that does not exist.
+
+```bash
+# (a) main weights (~182 GiB, 120 safetensors) - either checkpoint from the table below
+ls /var/tmp/models/keys-glm-5.3-flash-nvfp4-ablit-l15-45-anchorstock/config.json
+
+# (b) the DFlash2 drafter (~2.2 GB)
+huggingface-cli download incoai/GLM-5.3-Flash-DFlash2 \
+  --local-dir /var/tmp/models/GLM-5.3-Flash-DFlash2
+
+# (c) the SM121 indexer patch -- NOTE the rename. Without this the engine boots, answers
+#     short prompts, then dies on EVERY decode past ~24K context (crash forensics, disease 1).
+mkdir -p ~/patches
+cp docker/sparse_attn_indexer_kpool_sm121.py ~/patches/sparse_attn_indexer_kpool.py
+
+# (d) the vision chat template, INSIDE the weights dir (that mount is read-only at runtime)
+cp chat_template_mm.jinja /var/tmp/models/keys-glm-5.3-flash-nvfp4-ablit-l15-45-anchorstock/
+
+chmod +x launch-glm53-tp4-24g.sh flusher-unconditional.sh fleet_watchdog.sh
+```
+
+The launcher hard-fails with a named error if any of the four is missing, so you find out in
+one second rather than twenty minutes.
+
+### 3. Memory ritual — on every node
+
+```bash
+# swap must exist but must not be used. With NO swap the worker is killed outright during
+# MoE marlin repack; with swappiness>0 the UVM driver can livelock unrecoverably and take
+# the node off the network entirely. This does NOT survive a reboot - put it in
+# /etc/sysctl.d/ or you will lose boots to it.
+sudo sysctl -w vm.swappiness=0
+sudo swapoff -a && sudo swapon -a
+sync; echo 3 | sudo tee /proc/sys/vm/drop_caches
+
+# leave this running for the WHOLE boot. It refuses to start without passwordless sudo.
+setsid nohup ./flusher-unconditional.sh > flusher.log 2>&1 &
+grep -q "flusher: starting" flusher.log || { echo "FLUSHER DID NOT START"; tail flusher.log; }
+```
+
+### 4. Tear down everything, then launch workers first
+
+```bash
+# Rule 2 is not optional. A fresh rank that rendezvouses with a dying one hangs, and a
+# retry after a failed boot is the common case - do this every time.
+for n in <node1> <node2> <node3> <node4>; do ssh $n 'docker rm -f vllm_glm53' ; done
+
 ./launch-glm53-tp4-24g.sh 3   # worker
 ./launch-glm53-tp4-24g.sh 2   # worker
 ./launch-glm53-tp4-24g.sh 1   # worker
 ./launch-glm53-tp4-24g.sh 0   # head - serves http://<head>:8000/v1
 ```
 
-Edit the rank->IP map at the top of the launcher for your fabric. Boot is ~20 min: weight
-load, drafter load, KV allocation, warmup. Thinking is off by default; re-enable per request
-with `chat_template_kwargs: {"enable_thinking": true}` — no restart needed. Tool calling
-ships enabled (`glm47` parser).
+Boot is ~20 min: weight load, drafter load, KV allocation, warmup. Stop the flusher once
+serving (`pkill -f flusher-unconditional.sh`). Thinking is off by default; re-enable per
+request with `chat_template_kwargs: {"enable_thinking": true}` — no restart needed. Tool
+calling ships enabled (`glm47` parser).
 
 ### Verify the boot
 
 ```
 GPU KV cache size: 3,895,606 tokens, Maximum concurrency for 1,048,576 tokens per request: 3.72x
 ```
+
+**Your number will differ**, and that is expected — see *Measure your own ceiling* above.
+What matters is that the line appears and the pool is the size you pinned for.
 
 Then gate it before you trust it — the suite is in
 [docs/SM121-CRASH-FORENSICS-2026-08-27.md](docs/SM121-CRASH-FORENSICS-2026-08-27.md).
@@ -117,8 +170,9 @@ Abliteration credit: [drowzeys/keys](https://github.com/drowzeys).
 
 ## Performance
 
-**54.5 tok/s single stream** (408 tokens in 7.5 s, "write a function then explain it",
-temperature 0, thinking off) on the gate-passing boot. **4,141.8 tok/s prefill.**
+**54.5 tok/s single stream** — one run, 408 tokens in 7.5 s, "write a function then
+explain it", temperature 0, thinking off, on the gate-passing boot. n=1; treat it as
+indicative, not a benchmark. **4,141.8 tok/s prefill** (single sample, warmed, measured off-box during the gate suite — cold first-prefill on this stack is far slower, ~467 tok/s, because the kernels JIT).
 
 **Read this before quoting any speed number, including ours.** Draft acceptance on this
 model is *content-driven, not config-driven* — roughly 0.70+ on structured/code output and
@@ -143,7 +197,14 @@ parallel pass, so the step does not get longer, it just carries more accepted to
 
 At TP2/262K it measured 46.9 tok/s vs 21.8 for MTP-4 (2.15x) at 74.1 % acceptance, with a
 concurrency sweep of C1 35.1 · C2 41.6 · C3 40.6 · C4 47.5 · **C5 56.2** · C6 47.7 aggregate.
-*Those are TP2 numbers, kept for the MTP-4 comparison; this repo's config is TP4.*
+*Those are TP2 numbers, kept because they are the clean matched-settings comparison.*
+
+**We have not run a matched DFlash2-vs-MTP-4 comparison at TP4.** Our TP4 DFlash2 figure
+(54.5 tok/s, mixed code+prose) and the TP4 MTP figure in the lane table below (~55 tok/s,
+structured/warmed) were measured on *different prompts* and are not comparable — do not read
+them as DFlash2 and MTP being level here. Another operator's matched TP4 run found DFlash2
+well ahead on code and structured output and roughly level on prose, which is what the
+acceptance data predicts.
 
 Method, the nine-boot failure ladder, and the KV-layout fix that keeps GLM on its custom fast
 path: **[docs/DFLASH2-SPECULATIVE-DECODING.md](docs/DFLASH2-SPECULATIVE-DECODING.md)** ·
@@ -159,14 +220,20 @@ overlay: [`overlay-dflash2/`](overlay-dflash2/)
 
 | | **fp8 KV** (default) | **NVFP4 KV** (flex) |
 |---|---|---|
-| KV density | 656 B/token/layer | **368 B/token/layer** |
+| KV density | 512 B/token/layer (NoPE, unpacked) | **368 B/token/layer** |
 | Decode (structured, warmed) | **~55 tok/s** | ~37 tok/s |
 | Pool at equal 32 GiB/rank | 5,033,164 | **6,652,112** (1.32x) |
 
-The trade is clean: **NVFP4 buys capacity, fp8 buys speed.** Note the pool figures in that
+The trade is clean: **NVFP4 buys capacity, fp8 buys speed.** But be careful with the density
+ratio: our fp8 route runs the **512 B/token NoPE** record, not the 656 B packed one, so the
+real format win is about **1.36x**, not the 1.78x raw byte counts imply — and roughly **1.17x**
+once the standalone drafter's pages are counted. See [docs/OPEN-PROBLEMS.md](docs/OPEN-PROBLEMS.md). Note the pool figures in that
 row were measured at a **32 GiB/rank** pin during the 2026-08-27 lane comparison, not at the
 24 GiB default above — they are a like-for-like comparison between formats, not this repo's
-shipped numbers.
+shipped numbers. **32 GiB/rank is also the pin that later failed our concurrent-prefill gate**
+(see Superseded configurations); those pool figures are real allocations, not endorsed configs.
+They also come from a different engine generation than the 24 GiB number, which is why
+tokens-per-GiB does not divide out evenly across the three.
 
 Both `nvfp4_ds_mla` KV and `cudagraph_mode: FULL` have since been confirmed working alongside
 DFlash2 on this fleet, closing two entries in
@@ -196,7 +263,7 @@ The density win above is **not free** — we ran both lanes back-to-back on the 
 | **Decode** (structured/agentic, warmed) | **~55 tok/s** (51 / 56 / 55) | **~37 tok/s** (37 / 37) | **fp8 ~1.5×** |
 | Prefill (warmed, ~9K-token prompt) | **~3,530 tok/s · 2.55 s TTFT** (3 runs) | ~1,449 tok/s · 6.9 s TTFT¹ | fp8¹ |
 | KV pool @ 32 GiB/rank | 5,033,164 | **6,652,112** | **NVFP4 1.32×** |
-| KV density | 656 B/token/layer | **368 B/token/layer** | **NVFP4 1.8×** |
+| KV density | 512 B/token/layer (NoPE, unpacked) | **368 B/token/layer** | **NVFP4 1.8×** |
 
 ¹ The NVFP4 prefill/TTFT is a **single sample that may have been partly cold** (our fp8 first-prefill was 19 s / 467 tok/s cold, then settled to ~2.5 s / ~3,530 warmed — the b12x kernels JIT on the first large prefill too). We did not capture a clean warmed long-prompt NVFP4 prefill before teardown, so **treat decode as the definitive head-to-head and the prefill row as directional, not final.**
 
@@ -210,8 +277,12 @@ The density win above is **not free** — we ran both lanes back-to-back on the 
    threshold-triggered one silently starves the allocator.
 2. Tear down **all** ranks before relaunching **any** — a fresh rank that rendezvouses with
    a dying one hangs.
-3. Verify `grep '^IMAGE'` matches on every node before every launch; copy launcher files
-   whole, never `sed` over ssh.
+3. **Verify the image ID, not the tag name**, on every node before every launch:
+   `docker image inspect <tag> --format '{{.Id}}'` must return the *same* sha256 everywhere.
+   Matching tags prove nothing — four nodes that each built the tag locally get four different
+   images. Pull or `docker save | ssh | docker load` from ONE node so the IDs are identical.
+   A rank silently on a divergent image is the hardest failure in this repo to diagnose
+   (see `docs/DEPLOY-REPORT.md`, boot 8). Copy launcher files whole, never `sed` over ssh.
 4. **Gate with a long prompt AND a long answer.** `persistent_topk` crashes on decode
    *steps* past ~24K context, so a 49K prompt with a one-line answer proves nothing — ours
    decoded 15 tokens and passed meaninglessly. Force >=100 completion tokens, and vary the
@@ -247,7 +318,13 @@ The density win above is **not free** — we ran both lanes back-to-back on the 
   two diseases behind "random" deaths, and the gate suite.
 - [`docs/DEPLOY-REPORT.md`](docs/DEPLOY-REPORT.md) — every failure and receipt from deploy day.
 - [`probes/`](probes/) — the debugging kit: kernel probes with real model geometry, a NaN
-  bisect harness, kernel-vs-torch A/B, and the benchmark script.
+  bisect harness, kernel-vs-torch A/B, and the benchmark script. **`gb10_alloc_probe.py`
+  allocates all available memory to map the allocation wall — maintenance window only, never
+  on a node that is serving.**
+- [`fleet_watchdog.sh`](fleet_watchdog.sh) — systemd-friendly self-healing: probes `/health`,
+  and on 3 consecutive failures tears down all ranks, runs the memory ritual, starts the
+  unconditional flusher, and relaunches workers-first. Recovery is ~15 min, so tune the
+  threshold before pointing it at a busy endpoint.
 
 ---
 
