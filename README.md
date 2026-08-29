@@ -163,11 +163,73 @@ experiment lane before production).
 
 ## Credits
 
-Model: [zai-org/GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash) · Quant: [LibertAIDAI/GLM-5.3-Flash-NVFP4](https://huggingface.co/LibertAIDAI/GLM-5.3-Flash-NVFP4) · barrydeen (gmu reference + quant table) · vLLM [PR #53906](https://github.com/vllm-project/vllm/pull/53906) authors for the day-0 image · FlashInfer 0.6.18 · Deployed and debugged by Knox (Claude) for [@tonyd2wild](https://github.com/tonyd2wild). Companion deep-dive repo: [GLM-5.3-Flash-NVFP4-262K-2x-DGX-Spark](https://github.com/tonyd2wild/GLM-5.3-Flash-NVFP4-262K-2x-DGX-Spark).
+Model: [zai-org/GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash) · Quant: [LibertAIDAI/GLM-5.3-Flash-NVFP4](https://huggingface.co/LibertAIDAI/GLM-5.3-Flash-NVFP4) · barrydeen (gmu reference + quant table) · vLLM [PR #53906](https://github.com/vllm-project/vllm/pull/53906) authors for the day-0 image · FlashInfer 0.6.18 · Deployed and debugged by Knox (Claude) for [@tonyd2wild](https://github.com/tonyd2wild). TP4 measurement, the `--max-num-batched-tokens` ladder and the unconditional-flusher finding: [tonyliu312](https://github.com/tonyliu312/GLM-5.3-Flash-DFlash2-TP4-1M-Context) · Companion deep-dive repo: [GLM-5.3-Flash-NVFP4-262K-2x-DGX-Spark](https://github.com/tonyd2wild/GLM-5.3-Flash-NVFP4-262K-2x-DGX-Spark).
+
+## Default KV pool raised to 3,895,606 tokens — 24 GiB/rank (2026-08-29, gate-passed)
+
+**The shipped default is now `--kv-cache-memory 25769803776` (24 GiB/rank) = 3,895,606 fp8
+tokens at `--max-model-len 1048576`, 3.72x concurrent full-1M-context requests.** That is
+**+54.8 %** over the previous 16 GiB / 2,516,582 default.
+
+24 GiB is the same pin that **died** on 2026-08-27 under combined load. It passes now because
+of one change, and it is not a vLLM flag:
+
+**The page-cache flusher must be unconditional.** We previously ran a threshold-triggered
+flusher (drop caches only when `Cached > 40 GiB`). A threshold flusher can sit below its
+threshold and still leave the NVRM allocator short — which is why the same command booted or
+OOM'd depending on the moment, and why "phantom backing above 16 GiB" looked like a hardware
+ceiling. It was page cache. Run [`flusher-unconditional.sh`](flusher-unconditional.sh) on
+every node, started before the launcher, for the entire boot. Credit to
+[tonyliu312](https://github.com/tonyliu312/GLM-5.3-Flash-DFlash2-TP4-1M-Context) for naming
+this precisely.
+
+Gate results at 24 GiB (all in one session, engine healthy after each, `/health` 200 throughout):
+
+| gate | result |
+|---|---|
+| deep decode past the topk wall | 41,420-token prompt → **392 decoded tokens** |
+| repeat deep decode, cache-defeating salt | 41,426-token prompt → **399 decoded tokens**, 47.3 s |
+| 3x concurrent prefills | **32,879 tokens each**, all three completed, 8.4 s |
+| vision (mm template) | correct description returned |
+| residual memory after gates | head rank **15 GiB**, workers 19-20 GiB |
+
+The deep-decode gates are the ones that matter: 392 and 399 decode *steps* at 41K context is
+well past the ~24K `persistent_topk` trigger that killed the engine in August. A long prompt
+with a short answer does **not** test this — our first attempt decoded only 15 tokens and
+proved nothing. Force >=100 completion tokens or the gate is theatre.
+
+### Speed on this config
+
+**54.5 tok/s single stream** (408 tokens in 7.5 s, "write a function then explain it",
+temperature 0, thinking off) on the same boot that passed the gates above.
+
+Cumulative draft acceptance across the whole gate suite was **0.271**, but that figure is
+dominated by two deliberately prose-heavy 400-token deep-decode gates and understates normal
+traffic — acceptance on this model is content-driven, not config-driven (0.70+ on
+structured/code, ~0.33 on freeform prose, measured minutes apart on the same engine). Any
+single-stream tok/s number for DFlash2 is really a statement about the prompt. Quote the
+prompt or the number means nothing.
+
+### `--max-num-batched-tokens 8192` is now set
+
+Left unset, vLLM derives 2048 from the speculative settings and warns that this is
+suboptimal. At 8192 we measure **4,141.8 tok/s prefill throughput** on this TP4 config. The
+ladder on a 32K prompt (2048 -> 4096 -> 8192 giving -29 % TTFT and +42 % prefill for about
++1 GiB) is [tonyliu312's measurement](https://github.com/tonyliu312/GLM-5.3-Flash-DFlash2-TP4-1M-Context);
+we adopted the flag and confirmed the direction at TP4.
+
+### Measure your own ceiling — do not paste ours
+
+24 GiB/rank is where **our** fleet lands with 15 GiB residual on the head rank. Other
+operators run 28 and 32 GiB/rank on the same hardware. The head rank is always the binding
+constraint (it carries the API server and engine core on top of its shard), and startup free
+memory varies several GiB between otherwise identical nodes. Ladder up, and gate every step
+with the suite above — a config that boots and answers a short prompt is not a config that
+works.
 
 ## 5M-token KV pool at 1M context (2026-08-27, stress-gated)
 
-The shipped config is now **16 GiB KV per rank = 2,516,582 fp8 tokens** (see docs/SM121-CRASH-FORENSICS-2026-08-27.md for why bigger pools fail) at `--max-model-len 1048576` — 3.6 concurrent full-1M-context requests. Found via the **residual-headroom rule**: grow the KV slab until only ~8-10 GB stays available per node (nodes idle at ~37-42 GB available on the old 9 GiB config).
+The **historical** config was 16 GiB KV per rank = 2,516,582 fp8 tokens (superseded 2026-08-29 by the 24 GiB default above) (see docs/SM121-CRASH-FORENSICS-2026-08-27.md for why bigger pools fail) at `--max-model-len 1048576` — 3.6 concurrent full-1M-context requests. Found via the **residual-headroom rule**: grow the KV slab until only ~8-10 GB stays available per node (nodes idle at ~37-42 GB available on the old 9 GiB config).
 
 **The 38 GiB cautionary tale:** 38 GiB/rank (5,975,779 tokens) allocates cleanly, boots, and answers short prompts — then the first 20K-token prefill NVRM-OOMs a rank and the engine dies. On GB10, "serving" is not the bar; **gate every KV bump behind a real long prefill** with the engine verified alive afterward. 32 GiB passed a single-prefill gate, then died under three overlapping real-traffic requests (head rank carries API server + NFS duty). The bar is CONCURRENT prefills: 24 GiB survives 3x simultaneous 20K prefills with ~18 GB residual on the head.
 
