@@ -10,6 +10,23 @@ block-diffusion drafter, at the model's full 1,048,576-token context.
 
 ---
 
+## ⭐ Checkpoint: `RedHatAI/GLM-5.3-Flash-NVFP4` is now the default (corruption fix)
+
+ModelOpt-quantized NVFP4 builds of GLM-5.3-Flash (`LibertAIDAI/GLM-5.3-Flash-NVFP4` and the abliterated variants) emit **intermittent corrupted token IDs** ([vLLM #54150](https://github.com/vllm-project/vllm/issues/54150)). Nearly invisible in English, but when a corrupted token lands inside a tool-call block the parser desyncs and generation can spiral into a repetition lock.
+
+We reproduced and fixed it on this exact cluster (Korean-Hangul probe, `temperature 0`, non-streaming, 3 passes):
+
+| checkpoint | `quant_method` | U+FFFD count (3 runs) |
+|---|---|---|
+| ModelOpt NVFP4 (LibertAIDAI / keys-ablit) | `modelopt` | 4 / 9 / 8 |
+| **[RedHatAI/GLM-5.3-Flash-NVFP4](https://huggingface.co/RedHatAI/GLM-5.3-Flash-NVFP4)** | **`compressed-tensors`** | **0 / 0 / 0** |
+
+**Default checkpoint: `RedHatAI/GLM-5.3-Flash-NVFP4`.** Ungated, same `Glm5NextForConditionalGeneration` arch, **drop-in** — no flag changes (`--moe-backend marlin`, DFlash2 `k=7`, fp8 KV all identical), just repoint the model path. Loads ~2x faster (11 large shards vs 120 small). Tradeoff: it also quantizes activations to 4-bit (W4A4) where the weight-only builds are W4A16, so expect a few points lower on hard reasoning — but the output is **correct**. Make sure the vision `chat_template_mm.jinja` is present in the weights dir or image requests 500.
+
+Corruption first flagged by [@ajclark](https://github.com/ajclark) (issue #10). Uncensored (abliterated) builds remain available but carry the ModelOpt corruption until a compressed-tensors abliteration exists.
+
+---
+
 ## The configuration
 
 **This is the current default. Everything else in this README is either an alternative lane
