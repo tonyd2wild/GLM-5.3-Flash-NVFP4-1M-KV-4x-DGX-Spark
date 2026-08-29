@@ -66,6 +66,43 @@ The density win above is **not free** — we ran both lanes back-to-back on the 
 
 **What this means:** NVFP4 KV's ~33 % slower decode is the b12x `B12X_MLA_SPARSE` sparse-attention path (+ the per-token NVFP4 dequant) doing more compute per step than fp8's marlin path — and `--enforce-eager`, which the b12x kernels require, caps single-stream on both lanes. So the trade is clean: **NVFP4 = KV *capacity* (bigger context pool at equal VRAM), fp8 = *speed* (faster tokens for the same agent work).** For our production endpoint we run **fp8 as the daily driver** (faster, uncensored, vision, simplest to operate) and keep **NVFP4 as the flex** for the rare job that needs the giant pool over throughput.
 
+## Two flags on the fp8 lane (contributed, measured on a separate 4-Spark fleet)
+
+Both apply to `launch-glm53-vllm-tp4.sh`. Numbers below come from 4x GB10 at TP4,
+`--max-model-len 1048576`, fp8 KV, so the shape should transfer even though the absolute
+values will not.
+
+**`--enforce-eager` is not needed on the fp8 lane at TP4.** It is carried because the b12x
+kernels on the NVFP4 lane require it, and the README already notes it caps single stream.
+At TP4 each rank holds ~50 GiB of weights rather than the ~97 GiB that makes capture OOM at
+TP2, so CUDA-graph capture fits — 44-91 s, 0.3-1.8 GiB depending on `--max-num-seqs`.
+
+| | `--enforce-eager` | `cudagraph_mode: FULL_DECODE_ONLY` |
+|---|---|---|
+| per-step latency | 203.2 ms | **82.6 ms** |
+| step rate | 4.92 steps/s | **12.10 steps/s** |
+| MTP acceptance | 73.8 % | **81.9 %** |
+| end-to-end | 19.4 tok/s | **51.7 tok/s** |
+
+The launcher now takes `EAGER=1` to restore the old behaviour for the b12x lane; default
+is the graph path.
+
+**`--max-num-batched-tokens` was unset.** vLLM then derives 2048 from the speculative
+settings and warns at startup that this is suboptimal — the line reads like boilerplate and
+is easy to scroll past. On a 32K prompt, single stream:
+
+| value | TTFT | prefill tok/s | head-rank memory |
+|---|---|---|---|
+| 2048 (derived) | 20,685 ms | 1,584 | 110 GiB |
+| 4096 | 16,435 ms | 1,994 | 109 GiB |
+| **8192** | **14,595 ms** | **2,245** | 111 GiB |
+
+−29 % TTFT and +42 % prefill throughput for about +1 GiB. The slope flattens past 8192 while
+head-rank headroom drops, which is where it was left.
+
+Measurements and harnesses:
+[tonyliu312/GLM-5.3-Flash-DFlash2-TP4-1M-Context](https://github.com/tonyliu312/GLM-5.3-Flash-DFlash2-TP4-1M-Context)
+
 ## Numbers
 
 | Metric | TP4 flagship |

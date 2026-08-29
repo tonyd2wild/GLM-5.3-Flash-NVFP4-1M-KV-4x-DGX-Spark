@@ -7,6 +7,12 @@ set -euo pipefail
 # Run cache_flusher.sh alongside on every node (GB10 NVRM allocator, see repo docs).
 NODE_RANK="${1:?usage: launch-glm53-vllm-tp4.sh <0|1|2|3>}"
 
+# EAGER=1 restores --enforce-eager, which the b12x / NVFP4-KV lane requires.
+# The fp8 lane on TP4 does not need it: each rank holds ~50 GiB of weights, so
+# CUDA-graph capture fits (44-91 s, 0.3-1.8 GiB). Leaving it on caps single
+# stream -- see README for the measured difference.
+EAGER="${EAGER:-}"
+
 IMAGE="radixark/vllm-glm53-flash:sm121-v8"
 NAME="vllm_glm53"
 MODEL_HOST_PATH="/var/tmp/glm-5.3-flash-nvfp4"
@@ -60,7 +66,8 @@ docker run --gpus all -d \
     --gpu-memory-utilization 0.85 \
     --max-model-len 1048576 \
     --max-num-seqs 6 --block-size 2304 --moe-backend marlin --speculative-config '{"method":"mtp","num_speculative_tokens":4}' --kv-cache-dtype fp8_e4m3 --kv-cache-memory 25769803776 \
-    --enforce-eager \
+    --max-num-batched-tokens 8192 \
+    ${EAGER:+--enforce-eager} ${EAGER:---compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}'} \
     --tool-call-parser glm47 --enable-auto-tool-choice \
     --reasoning-parser glm45 --chat-template /models/glm-5.3-flash-nvfp4/chat_template_mm.jinja --default-chat-template-kwargs '{"enable_thinking": false}' \
     --distributed-executor-backend mp \
