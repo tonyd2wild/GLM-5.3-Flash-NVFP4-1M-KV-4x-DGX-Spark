@@ -103,7 +103,7 @@ Docker silently creates an empty directory over a bind-mount source that does no
 
 ```bash
 # (a) main weights (~182 GiB, 120 safetensors) - either checkpoint from the table below
-ls /var/tmp/models/keys-glm-5.3-flash-nvfp4-ablit-l15-45-anchorstock/config.json
+ls /var/tmp/models/GLM-5.3-Flash-NVFP4-redhat/config.json   # RedHatAI compressed-tensors (default)
 
 # (b) the DFlash2 drafter (~2.2 GB)
 huggingface-cli download incoai/GLM-5.3-Flash-DFlash2 \
@@ -115,7 +115,7 @@ mkdir -p ~/patches
 cp docker/sparse_attn_indexer_kpool_sm121.py ~/patches/sparse_attn_indexer_kpool.py
 
 # (d) the vision chat template, INSIDE the weights dir (that mount is read-only at runtime)
-cp chat_template_mm.jinja /var/tmp/models/keys-glm-5.3-flash-nvfp4-ablit-l15-45-anchorstock/
+cp chat_template_mm.jinja /var/tmp/models/GLM-5.3-Flash-NVFP4-redhat/
 
 chmod +x launch-glm53-tp4-24g.sh flusher-unconditional.sh fleet_watchdog.sh
 ```
@@ -178,7 +178,8 @@ identically.
 
 | | HuggingFace | notes |
 |---|---|---|
-| **Censored** | [LibertAIDAI/GLM-5.3-Flash-NVFP4](https://huggingface.co/LibertAIDAI/GLM-5.3-Flash-NVFP4) | stock GLM-5.3-Flash, NVFP4 weight-only |
+| **⭐ Default (recommended)** | [RedHatAI/GLM-5.3-Flash-NVFP4](https://huggingface.co/RedHatAI/GLM-5.3-Flash-NVFP4) | **compressed-tensors, corruption-free** (see fix above) |
+| Censored (legacy) | [LibertAIDAI/GLM-5.3-Flash-NVFP4](https://huggingface.co/LibertAIDAI/GLM-5.3-Flash-NVFP4) | stock NVFP4 weight-only — ⚠️ ModelOpt token corruption |
 | **Uncensored (abliterated)** | [drowzeys/keys-GLM-5.3-Flash-NVFP4-ablit-l15-45-anchorstock](https://huggingface.co/drowzeys/keys-GLM-5.3-Flash-NVFP4-ablit-l15-45-anchorstock) | abliterated (layers 15-45, anchor-stock), no refusals |
 
 Abliteration credit: [drowzeys/keys](https://github.com/drowzeys).
@@ -384,7 +385,7 @@ experiment lane before production).
 ## Credits
 
 Model: [zai-org/GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash) ·
-Quant: [LibertAIDAI/GLM-5.3-Flash-NVFP4](https://huggingface.co/LibertAIDAI/GLM-5.3-Flash-NVFP4) ·
+Quant: [RedHatAI/GLM-5.3-Flash-NVFP4](https://huggingface.co/RedHatAI/GLM-5.3-Flash-NVFP4) (default, compressed-tensors) ·
 DFlash2 drafter: [incoai/GLM-5.3-Flash-DFlash2](https://huggingface.co/incoai/GLM-5.3-Flash-DFlash2) ·
 NVFP4-KV lane, Zero-RoPE shim, b12x kernels and the ablit weights:
 [drowzeys / keys](https://github.com/drowzeys/keys-vLLm.0.27.1-GLM-5.3-Flash-NVFP4-NVFP4KV-1M-Context-Abliterated) ·
