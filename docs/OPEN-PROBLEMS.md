@@ -192,13 +192,18 @@ pre-launch flush is untested.
 
 - **Vision is not speculated.** The drafter logs `does not support external multimodal
   embeddings … using text-only draft inputs`. Image requests work but get no speedup.
-- **CUDA graphs with DFlash2 — RESOLVED 2026-08-29:** `cudagraph_mode: FULL` runs with the
+- **CUDA graphs with DFlash2 — RESOLVED 2026-08-29, CONFIRMED +22% 2026-08-31:** `cudagraph_mode: FULL` runs with the
   drafter on this fleet. The trap below still applies — check the metric after any graph boot.
   Original note: **CUDA graphs untested with DFlash2.** We run `--enforce-eager`; step time is a flat
   ~78 ms regardless of acceptance, which makes it the real throughput ceiling. Others run
   graphs successfully on this model. **Trap:** vllm#53030 — piecewise-graph
   `BatchDescriptor` collision silently pins acceptance at exactly 1.00. Check
   `vllm:spec_decode_num_accepted_tokens_per_pos_total` after any graph-enabled boot.
+  **2026-08-31 measured on the fp8/marlin lane:** dropping `--enforce-eager` (required
+  only by the b12x NVFP4-KV kernels) gives `FULL_AND_PIECEWISE` capture (40s, 0.86 GiB)
+  that coexists cleanly with DFlash2 — +22% decode (26.7 -> 32.5 tok/s), accept ratio
+  27-35% (NOT pinned at 1.00), zero Xid. Full method + probe battery:
+  `docs/CUDA-GRAPHS-DFLASH2-FP8-TP4-2026-08-31.md`.
 - **Acceptance is workload-bound, not config-bound.** 0.70+ on structured/math output,
   ~0.33 on freeform prose, measured on the same engine minutes apart. Benchmarks that
   quote one number without the prompt mix are not comparable — including ours before we
