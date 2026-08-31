@@ -69,10 +69,25 @@ docker run --gpus all -d \
     --tensor-parallel-size 4 \
     --gpu-memory-utilization 0.85 \
     --max-model-len 1048576 \
-    --max-num-seqs 6 --block-size 2304 --moe-backend marlin \
-    --max-num-batched-tokens 8192 \
+    `# max-num-seqs 6 -> 64: the old value was the binding constraint on aggregate` \
+    `# throughput, not the fabric. Aggregate was still climbing monotonically when it hit` \
+    `# the cap. 6 -> 64 took best aggregate 183 -> 519 tok/s. Single stream is unaffected.` \
+    `# See docs/SPEED-RUN-2026-08-31.md.` \
+    --max-num-seqs 64 --block-size 2304 --moe-backend marlin \
+    `# 8192 -> 16384: prefill +36-56% (114K prompt: 1194 -> 1863 tok/s, TTFT 95s -> 61s).` \
+    `# Costs ~3% aggregate at C48. Worth it for agentic/long-prompt traffic; set back to` \
+    `# 8192 if you only care about aggregate decode.` \
+    --max-num-batched-tokens 16384 \
     --speculative-config '{"method":"dflash","model":"/models/dflash2-draft","num_speculative_tokens":7}' \
     --kv-cache-dtype fp8_e4m3 --kv-cache-memory 25769803776 \
+    `# DO NOT REMOVE --enforce-eager. This was tested on 2026-08-31, not assumed:` \
+    `# cudagraph_mode PIECEWISE measured -19% single stream and -8..18% aggregate, and` \
+    `# cost 4 extra minutes of startup. 34 of 45 layers are KDA linear-attention` \
+    `# (UNIFORM_SINGLE_TOKEN_DECODE, ineligible for full capture), so PIECEWISE must split` \
+    `# the graph around them and the boundaries cost more than the launch overhead they` \
+    `# remove; spec decode compounds it because the verify batch shape varies with how many` \
+    `# draft positions were accepted. The widely-quoted "+55% from CUDA graphs on SM121"` \
+    `# does not apply to hybrid linear-attention models.` \
     --enforce-eager \
     --tool-call-parser glm47 --enable-auto-tool-choice \
     --reasoning-parser glm45 --chat-template /models/glm-5.3-flash-nvfp4/chat_template_mm.jinja \
