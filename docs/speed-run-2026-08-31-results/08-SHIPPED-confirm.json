@@ -1,0 +1,212 @@
+{
+  "label": "08-SHIPPED-confirm",
+  "started": "2026-08-31 07:23:45",
+  "url": "http://100.113.138.96:8000",
+  "single": {
+    "count100": {
+      "decode_tok_s": {
+        "median": 101.64,
+        "p90": 103.33,
+        "peak": 103.33,
+        "n": 3
+      },
+      "e2e_tok_s": {
+        "median": 86.1,
+        "p90": 93.81,
+        "peak": 93.81,
+        "n": 3
+      },
+      "ttft_s": {
+        "median": 0.21,
+        "p90": 0.56,
+        "peak": 0.56,
+        "n": 3
+      },
+      "completion_tokens": 200,
+      "prompt_tokens": 33,
+      "spec": {
+        "accept_ratio": 0.9542,
+        "mean_accept_len": 7.679,
+        "per_pos": {
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"0\"": 1.0,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"1\"": 0.987,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"2\"": 0.987,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"3\"": 0.987,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"4\"": 0.962,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"5\"": 0.885,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"6\"": 0.872
+        }
+      }
+    },
+    "code": {
+      "decode_tok_s": {
+        "median": 72.03,
+        "p90": 76.77,
+        "peak": 76.77,
+        "n": 3
+      },
+      "e2e_tok_s": {
+        "median": 70.14,
+        "p90": 73.62,
+        "peak": 73.62,
+        "n": 3
+      },
+      "ttft_s": {
+        "median": 0.28,
+        "p90": 0.4,
+        "peak": 0.4,
+        "n": 3
+      },
+      "completion_tokens": 700,
+      "prompt_tokens": 58,
+      "spec": {
+        "accept_ratio": 0.6563,
+        "mean_accept_len": 5.594,
+        "per_pos": {
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"0\"": 0.92,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"1\"": 0.804,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"2\"": 0.714,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"3\"": 0.645,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"4\"": 0.573,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"5\"": 0.501,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"6\"": 0.438
+        }
+      }
+    },
+    "prose": {
+      "decode_tok_s": {
+        "median": 26.92,
+        "p90": 28.77,
+        "peak": 28.77,
+        "n": 3
+      },
+      "e2e_tok_s": {
+        "median": 26.7,
+        "p90": 28.58,
+        "peak": 28.58,
+        "n": 3
+      },
+      "ttft_s": {
+        "median": 0.19,
+        "p90": 0.25,
+        "peak": 0.25,
+        "n": 3
+      },
+      "completion_tokens": 700,
+      "prompt_tokens": 51,
+      "spec": {
+        "accept_ratio": 0.1723,
+        "mean_accept_len": 2.206,
+        "per_pos": {
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"0\"": 0.625,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"1\"": 0.318,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"2\"": 0.146,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"3\"": 0.067,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"4\"": 0.028,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"5\"": 0.013,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"6\"": 0.008
+        }
+      }
+    }
+  },
+  "prefill": {
+    "4096": {
+      "prompt_tokens": 13639,
+      "ttft_s": 18.061,
+      "prefill_tok_s": 755.2
+    },
+    "16384": {
+      "prompt_tokens": 56196,
+      "ttft_s": 27.656,
+      "prefill_tok_s": 2032.0
+    },
+    "32768": {
+      "prompt_tokens": 113917,
+      "ttft_s": 97.13,
+      "prefill_tok_s": 1172.8
+    }
+  },
+  "sweep": {
+    "c1": {
+      "agg_tok_s": {
+        "median": 65.71,
+        "p90": 72.44,
+        "peak": 72.44,
+        "n": 2
+      },
+      "wall_s": {
+        "median": 10.77,
+        "p90": 11.87,
+        "peak": 11.87,
+        "n": 2
+      },
+      "spec": {
+        "accept_ratio": 0.6502,
+        "mean_accept_len": 5.552,
+        "per_pos": {
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"0\"": 0.944,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"1\"": 0.79,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"2\"": 0.687,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"3\"": 0.599,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"4\"": 0.556,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"5\"": 0.524,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"6\"": 0.452
+        }
+      }
+    },
+    "c16": {
+      "agg_tok_s": {
+        "median": 254.41,
+        "p90": 302.3,
+        "peak": 302.3,
+        "n": 2
+      },
+      "wall_s": {
+        "median": 45.64,
+        "p90": 54.23,
+        "peak": 54.23,
+        "n": 2
+      },
+      "spec": {
+        "accept_ratio": 0.6381,
+        "mean_accept_len": 5.467,
+        "per_pos": {
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"0\"": 0.933,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"1\"": 0.796,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"2\"": 0.691,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"3\"": 0.612,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"4\"": 0.541,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"5\"": 0.482,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"6\"": 0.412
+        }
+      }
+    },
+    "c48": {
+      "agg_tok_s": {
+        "median": 469.74,
+        "p90": 526.99,
+        "peak": 526.99,
+        "n": 2
+      },
+      "wall_s": {
+        "median": 72.61,
+        "p90": 81.46,
+        "peak": 81.46,
+        "n": 2
+      },
+      "spec": {
+        "accept_ratio": 0.6433,
+        "mean_accept_len": 5.503,
+        "per_pos": {
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"0\"": 0.94,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"1\"": 0.796,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"2\"": 0.696,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"3\"": 0.615,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"4\"": 0.547,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"5\"": 0.489,
+          "engine=\"0\",model_name=\"glm-5.3-flash\",position=\"6\"": 0.42
+        }
+      }
+    }
+  }
+}
