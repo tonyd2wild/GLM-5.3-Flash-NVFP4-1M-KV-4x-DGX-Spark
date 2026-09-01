@@ -27,6 +27,12 @@ Corruption first flagged by [@ajclark](https://github.com/ajclark) (issue #10). 
 
 ---
 
+> **Second site, 100G switched fabric:** [docs/FIELD-NOTES-4NODE-100G.md](docs/FIELD-NOTES-4NODE-100G.md)
+> reproduces this recipe on four GX10 through an Arista 7060CX-32S at 100G. Decode matched
+> the 200G numbers, which suggests it is not fabric-bound. Also covers a GID-index lookup
+> for the launcher, why AOC transceivers overheat in the GX10 cages, and moving 185 GB
+> between nodes without encrypting it.
+
 ## The configuration
 
 **This is the current default. Everything else in this README is either an alternative lane
