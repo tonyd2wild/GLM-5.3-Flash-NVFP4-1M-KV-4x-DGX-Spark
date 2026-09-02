@@ -1,5 +1,34 @@
 # GLM-5.3-Flash TopK oversubscription — exact `torch.topk` routing fix
 
+> ## ⚠️ This image must run with `--enforce-eager`
+>
+> **Do not pair the topkfix image with `cudagraph_mode: FULL_AND_PIECEWISE`.** Measured on a
+> 4-Spark fleet 2026-09-02: all three worker ranks freeze at the same instant on
+> `Breakable CUDA graph enabled` and never reach serving. The tell is
+> **96% GPU utilisation at ~18 W** — a spin-wait on a collective that will never complete
+> (see [`docs/FIELD-NOTES-4NODE-100G.md`](FIELD-NOTES-4NODE-100G.md)) — with the head rank
+> logging `shm_broadcast: No available shared memory broadcast block` once a minute.
+>
+> This is a genuine incompatibility, not a flaw in the patch: this fix was validated
+> 2026-08-28, and the CUDA-graph path only became the recommended fp8/marlin lane on
+> 08-31. With `--enforce-eager` the image is clean — verified decoding 113,918-token
+> prompts at C1 and C2 with **no** SM-count bind-mount and zero `persistent_topk`,
+> `oversubscribe`, `FilteredTopK` or `EngineDead` signatures on any rank.
+>
+> **The trade-off, measured on the same fleet** (seqs 64, batched 16384, temperature 0,
+> median of 3):
+>
+> | prompt | graphs + SM-count bind-mount | topkfix + eager |
+> |---|---|---|
+> | count-to-100 | 105.58 | 80.07 |
+> | code | 77.32 | 58.09 |
+> | prose | 31.53 | 21.85 |
+>
+> About **−25%**, which is the cost of eager, not of the patch. Main lane keeps the
+> bind-mount and the graphs; this lane trades speed for a baked fix and no mount to forget.
+
+
+
 **Status: SHIPPED AND VERIFIED LIVE on a 4-Spark GB10 fleet (2026-08-28).** This is the
 second, cleaner fix for **Disease 1** (`persistent_topk` smem wall) documented in
 [`SM121-CRASH-FORENSICS-2026-08-27.md`](SM121-CRASH-FORENSICS-2026-08-27.md). Where the
