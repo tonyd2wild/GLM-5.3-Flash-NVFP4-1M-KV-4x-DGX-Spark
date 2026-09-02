@@ -85,11 +85,29 @@ docker run --gpus all -d \
     --tensor-parallel-size 4 \
     --gpu-memory-utilization 0.85 \
     --max-model-len 1048576 \
-    --max-num-seqs 6 --block-size 2304 --moe-backend marlin \
-    --max-num-batched-tokens 8192 \
+    `# max-num-seqs 6 -> 64: the old value was the binding constraint on aggregate` \
+    `# throughput, not the fabric. Aggregate was still climbing monotonically when it hit` \
+    `# the cap. 6 -> 64 took best aggregate 183 -> 519 tok/s. Single stream is unaffected.` \
+    `# See docs/SPEED-RUN-2026-08-31.md.` \
+    --max-num-seqs 64 --block-size 2304 --moe-backend marlin \
+    `# 8192 -> 16384: prefill +36-56% (114K prompt: 1194 -> 1863 tok/s, TTFT 95s -> 61s).` \
+    `# Costs ~3% aggregate at C48. Worth it for agentic/long-prompt traffic; set back to` \
+    `# 8192 if you only care about aggregate decode.` \
+    --max-num-batched-tokens 16384 \
     --speculative-config '{"method":"dflash","model":"/models/dflash2-draft","num_speculative_tokens":7}' \
     --kv-cache-dtype fp8_e4m3 --kv-cache-memory 25769803776 \
-    --enforce-eager \
+    `# CUDA graphs: use FULL_AND_PIECEWISE on this (fp8 KV + marlin) lane.` \
+    `# CORRECTION 2026-09-02 -- an earlier revision of this file said "DO NOT REMOVE` \
+    `# --enforce-eager" on the strength of a -19% measurement. That measurement was real` \
+    `# but tested the WRONG MODE: plain PIECEWISE, which forces piecewise graphs onto the` \
+    `# decode path. FULL_AND_PIECEWISE uses FULL for uniform decode batches and piecewise` \
+    `# only for mixed/prefill, and measures FASTER than eager on all three prompt types:` \
+    `#   count-to-100 101.6 -> 105.6   code 72.0 -> 77.3   prose 26.9 -> 31.5` \
+    `#   best aggregate 503.3 -> 530.0 tok/s` \
+    `# --enforce-eager is a property of the NVFP4-KV/b12x lane, NOT of this model: the b12x` \
+    `# kernels require it, marlin does not. Keep eager ONLY on the b12x lane, and on the` \
+    `# topkfix image (docs/TOPK-OVERSUSCRIPTION-FIX.md), which deadlocks under graphs.` \
+    --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE"}' \
     --tool-call-parser glm47 --enable-auto-tool-choice \
     --reasoning-parser glm45 --chat-template /models/glm-5.3-flash-nvfp4/chat_template_mm.jinja \
     --default-chat-template-kwargs '{"enable_thinking": false}' \

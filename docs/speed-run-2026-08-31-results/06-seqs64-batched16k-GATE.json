@@ -1,0 +1,21 @@
+{
+  "label": "06-seqs64-batched16k-GATE",
+  "started": "2026-08-31 06:35:12",
+  "url": "http://100.113.138.96:8000",
+  "longctx": {
+    "c1": {
+      "agg_tok_s": 4.11,
+      "per_stream_tok_s": 38.05,
+      "wall_s": 60.8,
+      "prompt_tokens": 113918,
+      "fails": 0
+    },
+    "c2": {
+      "agg_tok_s": 7.7,
+      "per_stream_tok_s": 18.25,
+      "wall_s": 65.0,
+      "prompt_tokens": 113918,
+      "fails": 0
+    }
+  }
+}

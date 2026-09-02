@@ -1,0 +1,22 @@
+{
+  "label": "09-SHIPPED-prefill-warm",
+  "started": "2026-08-31 07:32:50",
+  "url": "http://100.113.138.96:8000",
+  "prefill": {
+    "4096": {
+      "prompt_tokens": 13639,
+      "ttft_s": 6.52,
+      "prefill_tok_s": 2091.8
+    },
+    "16384": {
+      "prompt_tokens": 56198,
+      "ttft_s": 26.872,
+      "prefill_tok_s": 2091.3
+    },
+    "32768": {
+      "prompt_tokens": 113915,
+      "ttft_s": 54.774,
+      "prefill_tok_s": 2079.7
+    }
+  }
+}
