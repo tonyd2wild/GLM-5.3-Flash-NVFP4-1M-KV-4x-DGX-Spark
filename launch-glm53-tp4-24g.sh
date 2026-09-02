@@ -29,6 +29,22 @@ case "$NODE_RANK" in
 esac
 
 # Fail loudly on missing prereqs rather than letting Docker create empty dirs over them.
+# The RoCEv2 GID index is not stable across link bounces and reboots, so look it up
+# instead of trusting NCCL_IB_GID_INDEX below. A stale index fails at init with
+# "unhandled system error" on one rank and nothing useful from the head; an unset one
+# makes the collective hang silently. See docs/FIELD-NOTES-4NODE-100G.md.
+GIDX=3
+DETECTED_GIDX=""
+for _i in 0 1 2 3 4 5 6 7; do
+  _t=$(cat /sys/class/infiniband/rocep1s0f0/ports/1/gid_attrs/types/$_i 2>/dev/null)
+  _g=$(cat /sys/class/infiniband/rocep1s0f0/ports/1/gids/$_i 2>/dev/null)
+  case "$_t" in *"RoCE v2"*)
+    case "$_g" in *ffff*) DETECTED_GIDX=$_i; break ;; esac ;;
+  esac
+done
+[ -n "$DETECTED_GIDX" ] && GIDX=$DETECTED_GIDX
+echo "using NCCL_IB_GID_INDEX=$GIDX"
+
 test -f "$MODEL_HOST_PATH/config.json"       || { echo "MISSING: $MODEL_HOST_PATH/config.json" >&2; exit 3; }
 test -f "$MODEL_HOST_PATH/chat_template_mm.jinja" || { echo "MISSING: chat_template_mm.jinja in the weights dir (vision will 500)" >&2; exit 3; }
 test -f "$HOME/patches/sparse_attn_indexer_kpool.py" || { echo "MISSING: \$HOME/patches/sparse_attn_indexer_kpool.py -- cp it from docker/sparse_attn_indexer_kpool_sm121.py. Without it the engine dies on every decode past ~24K context." >&2; exit 3; }
@@ -51,7 +67,7 @@ docker run --gpus all -d \
   -e TORCH_CUDA_ARCH_LIST=12.1a -e FLASHINFER_CUDA_ARCH_LIST=12.1a \
   -e FLASHINFER_DISABLE_VERSION_CHECK=1 \
   -e NCCL_NET=IB -e NCCL_IB_DISABLE=0 \
-  -e NCCL_IB_HCA=rocep1s0f0 -e NCCL_IB_GID_INDEX=3 \
+  -e NCCL_IB_HCA=rocep1s0f0 -e NCCL_IB_GID_INDEX=$GIDX \
   -e NCCL_IB_ROCE_VERSION_NUM=2 -e NCCL_IB_ADDR_FAMILY=AF_INET \
   -e NCCL_IB_ADDR_RANGE=192.168.192.0/24 \
   -e NCCL_SOCKET_IFNAME=enp1s0f0np0 -e GLOO_SOCKET_IFNAME=enp1s0f0np0 \
