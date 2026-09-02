@@ -206,6 +206,12 @@ settings and warns that this is suboptimal. The ladder on a 32K prompt — 2048 
 [tonyliu312's measurement](https://github.com/tonyliu312/GLM-5.3-Flash-DFlash2-TP4-1M-Context);
 we adopted the flag and confirmed the direction at TP4.
 
+> **CUDA graphs on the fp8/marlin lane — 2026-08-31.** `--enforce-eager` is required by
+> the b12x kernels *on the NVFP4-KV path only*. On the **fp8/marlin lane** it can be
+> dropped: `FULL_AND_PIECEWISE` graphs capture cleanly with DFlash2 (0.86 GiB, no
+> vLLM#53030 pin) for **+22% decode** (26.7 -> 32.5 tok/s). Keep the accept-ratio check.
+> Full method + probe battery: [docs/CUDA-GRAPHS-DFLASH2-FP8-TP4-2026-08-31.md](docs/CUDA-GRAPHS-DFLASH2-FP8-TP4-2026-08-31.md).
+
 ### DFlash2
 
 **First working DFlash2 deployment of GLM-5.3-Flash on GB10.** The drafter was published for
