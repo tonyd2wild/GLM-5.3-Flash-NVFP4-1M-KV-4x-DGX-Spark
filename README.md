@@ -1,4 +1,6 @@
-# GLM-5.3-Flash · DFlash2 · TP4 · 1M Context · 3.9M-Token KV
+# GLM-5.3-Flash · DFlash2 · TP4 · 1M Context · 3.8M-Token KV
+
+> **Current recipe, one page: [CURRENT.md](CURRENT.md).** One launcher (`launch-glm53-tp4-24g.sh`), RedHatAI weights only, CUDA graphs on. Everything below is reference or history.
 
 > 🔀 **Only have two Sparks?** The same images run at TP2 (262K context) — see the sibling repo:
 > **[GLM-5.3-Flash NVFP4 + DFlash2 · 2x DGX Spark →](https://github.com/tonyd2wild/GLM-5.3-Flash-NVFP4-DFlash2-2x-DGX-Spark)**
@@ -49,6 +51,11 @@ or history — both are labelled as such.**
 | **Aggregate throughput** | **530.0 tok/s** @C48 (was 183.1 @C6 before the three changes below) |
 | Single stream | **105.6** count-to-100 · **77.3** code · **31.5** prose (temperature 0, median of 3) |
 | Prefill | **1,863 tok/s** warmed @114K prompt · TTFT **54.8 s** (was 1,194 / 95.4 s) |
+| **Weights** | **RedHatAI/GLM-5.3-Flash-NVFP4 (compressed-tensors) only.** ModelOpt / abliterated builds corrupt token IDs; the launcher refuses them (`ALLOW_MODELOPT=1` to override) |
+| Vision | on (`chat_template_mm.jinja`) |
+| Thinking | off by default |
+| Launcher | [`launch-glm53-tp4-24g.sh`](launch-glm53-tp4-24g.sh) (do not rename: `fleet_watchdog.sh` hard-codes it) |
+| Flusher | [`flusher-unconditional.sh`](flusher-unconditional.sh) — **required, and must be unconditional** |
 
 ### What changed, and what each part bought (measured 2026-08-31 → 09-02)
 
@@ -70,11 +77,6 @@ or history — both are labelled as such.**
 > is content-driven, so the same engine measures 105.6 on count-to-100 and 31.5 on dense
 > prose, minutes apart. The harness ([`probes/bench_glm53_tp4.py`](probes/bench_glm53_tp4.py))
 > uses a fixed 8-prompt set at temperature 0 with median-of-N for exactly this reason.
-| Weights | abliterated or stock NVFP4, drop-in either way |
-| Vision | on (`chat_template_mm.jinja`) |
-| Thinking | off by default |
-| Launcher | [`launch-glm53-tp4-24g.sh`](launch-glm53-tp4-24g.sh) |
-| Flusher | [`flusher-unconditional.sh`](flusher-unconditional.sh) — **required, and must be unconditional** |
 
 Gate-passed 2026-08-29: two deep decodes at ~41K context (392 and 399 decoded tokens),
 3x concurrent prefills at 32,879 tokens each, vision, `/health` 200 throughout. Residual
@@ -190,7 +192,7 @@ calling ships enabled (`glm47` parser).
 ### Verify the boot
 
 ```
-GPU KV cache size: 3,895,606 tokens, Maximum concurrency for 1,048,576 tokens per request: 3.72x
+GPU KV cache size: 3,895,606 tokens, Maximum concurrency for 1,048,576 tokens per request: 3.72x   # eager run; with CUDA graphs on, 3,834,498 (graph buffers take 0.86 GiB)
 ```
 
 **Your number will differ**, and that is expected — see *Measure your own ceiling* above.
@@ -230,7 +232,7 @@ figure is really a statement about the prompt. **Quote the prompt or the number 
 meaningless.** Cumulative acceptance across our gate suite was 0.271, but that suite was
 deliberately prose-heavy and understates normal traffic.
 
-`--max-num-batched-tokens 8192` is set. Left unset, vLLM derives 2048 from the speculative
+`--max-num-batched-tokens 16384` is set (8192 until 2026-09-01; see the change table at the top). Left unset, vLLM derives 2048 from the speculative
 settings and warns that this is suboptimal. The ladder on a 32K prompt — 2048 -> 4096 ->
 8192 for -29 % TTFT and +42 % prefill at about +1 GiB — is
 [tonyliu312's measurement](https://github.com/tonyliu312/GLM-5.3-Flash-DFlash2-TP4-1M-Context);
