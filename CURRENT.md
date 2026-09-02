@@ -59,3 +59,7 @@ Decode is quoted from real prompts (prose, code, and the other categories above)
 `launch-glm53-tp4-dflash2-topkfix.sh` and `docker/topkfix/` (eager-only alternate lane, gmu 0.72, seqs 16), `docker/Dockerfile.glm53-sm121-v2` and `-v9` as build targets (v8 is the published base), `overlay-dflash2/` (duplicate of `docker/dflash2-overlay/`), `docs/DEPLOY-REPORT.md` (a TP2 report), `docs/GB10-KV-MEMORY-LADDER.md`, `docs/BENCH-C1-C6-DFLASH2.md`, `docs/NVFP4-KV-BUILD-SPEC.md`, `probes/bench_c1c6.py`, `probes/bench_glm53.py`.
 
 Two Sparks only: the sibling repo `GLM-5.3-Flash-NVFP4-DFlash2-2x-DGX-Spark` (TP2, 262K, enforce-eager, KV pinned 6 GiB).
+
+<!-- launcher hashes, maintained by tools/check-current.sh --write -->
+sha256 585f59d5882ac9b955f25a8d02a2626b90a6663277673ac195926a803bca6bc9  launch-glm53-tp4-24g.sh
+sha256 5e1ce6b9c9afe00bbcac10445573753c557876bea3ab7205fbbac3c0d3f9b605  launch-glm53-tp4-dflash2-topkfix.sh
