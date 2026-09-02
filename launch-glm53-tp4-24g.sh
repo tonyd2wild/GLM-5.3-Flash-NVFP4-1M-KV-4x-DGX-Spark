@@ -13,7 +13,21 @@ NODE_RANK="${1:?usage: launch-glm53-tp4-24g.sh <0|1|2|3>}"
 
 IMAGE="ghcr.io/tonyd2wild/vllm-glm53-flash:sm121-v11-dflash2"
 NAME="vllm_glm53"
-MODEL_HOST_PATH="/var/tmp/models/keys-glm-5.3-flash-nvfp4-ablit-l15-45-anchorstock"
+# Checkpoint. The documented default is RedHatAI/GLM-5.3-Flash-NVFP4 (compressed-tensors)
+# because the ModelOpt builds emit intermittent corrupted token IDs (vLLM #54150, README
+# table above). This launcher previously hard-coded the abliterated ModelOpt path, so the
+# shipped default did not match the documented one. Override with MODEL_HOST_PATH=... only
+# for the legacy/abliterated builds, and set ALLOW_MODELOPT=1 to get past the guard below.
+MODEL_HOST_PATH="${MODEL_HOST_PATH:-/var/tmp/models/GLM-5.3-Flash-NVFP4-redhat}"
+if [ -f "$MODEL_HOST_PATH/config.json" ] && [ "${ALLOW_MODELOPT:-0}" != "1" ]; then
+  _q=$(python3 -c "import json;print(json.load(open('$MODEL_HOST_PATH/config.json')).get('quantization_config',{}).get('quant_method',''))" 2>/dev/null || echo "")
+  if [ "$_q" = "modelopt" ]; then
+    echo "REFUSING: $MODEL_HOST_PATH is a ModelOpt build (quant_method=modelopt)." >&2
+    echo "  ModelOpt NVFP4 emits intermittent corrupted token IDs (vLLM #54150)." >&2
+    echo "  Use RedHatAI/GLM-5.3-Flash-NVFP4, or set ALLOW_MODELOPT=1 to override." >&2
+    exit 5
+  fi
+fi
 MODEL_PATH="/models/glm-5.3-flash-nvfp4"
 CACHE_HOST_PATH="/var/tmp/glm53-vllm-cache"
 HEAD_IP="192.168.192.2"
@@ -116,7 +130,7 @@ docker run --gpus all -d \
     --master-addr "$HEAD_IP" --master-port "$MPORT" \
     $HEADLESS
 
-echo "launched $NAME rank=$NODE_RANK host=$HOST_IP tp4 kv=24GiB mnbt=8192"
+echo "launched $NAME rank=$NODE_RANK host=$HOST_IP tp4 kv=24GiB mnbt=16384 seqs=64 graphs=FULL_AND_PIECEWISE"
 sleep 2
 docker ps --format '{{.Names}} {{.Status}}' | grep "$NAME" || {
   echo "$NAME exited; inspect with: docker logs $NAME" >&2; exit 1; }

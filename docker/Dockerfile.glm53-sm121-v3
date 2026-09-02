@@ -1,4 +1,5 @@
-FROM radixark/vllm-glm53-flash:sm121-nope-mla
+#FROM radixark/vllm-glm53-flash:sm121-nope-mla
+FROM radixark/vllm-glm53-flash:sm121-v1
 
 # FlashInfer 0.6.17's FA2 MLA kernel produces NaN for 64-256-row batches on
 # SM121 (probed and bisected on Reddie's GPU; 1-6 and 512+ rows are clean).
