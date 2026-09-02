@@ -80,15 +80,18 @@ docker run --gpus all -d \
     --max-num-batched-tokens 16384 \
     --speculative-config '{"method":"dflash","model":"/models/dflash2-draft","num_speculative_tokens":7}' \
     --kv-cache-dtype fp8_e4m3 --kv-cache-memory 25769803776 \
-    `# DO NOT REMOVE --enforce-eager. This was tested on 2026-08-31, not assumed:` \
-    `# cudagraph_mode PIECEWISE measured -19% single stream and -8..18% aggregate, and` \
-    `# cost 4 extra minutes of startup. 34 of 45 layers are KDA linear-attention` \
-    `# (UNIFORM_SINGLE_TOKEN_DECODE, ineligible for full capture), so PIECEWISE must split` \
-    `# the graph around them and the boundaries cost more than the launch overhead they` \
-    `# remove; spec decode compounds it because the verify batch shape varies with how many` \
-    `# draft positions were accepted. The widely-quoted "+55% from CUDA graphs on SM121"` \
-    `# does not apply to hybrid linear-attention models.` \
-    --enforce-eager \
+    `# CUDA graphs: use FULL_AND_PIECEWISE on this (fp8 KV + marlin) lane.` \
+    `# CORRECTION 2026-09-02 -- an earlier revision of this file said "DO NOT REMOVE` \
+    `# --enforce-eager" on the strength of a -19% measurement. That measurement was real` \
+    `# but tested the WRONG MODE: plain PIECEWISE, which forces piecewise graphs onto the` \
+    `# decode path. FULL_AND_PIECEWISE uses FULL for uniform decode batches and piecewise` \
+    `# only for mixed/prefill, and measures FASTER than eager on all three prompt types:` \
+    `#   count-to-100 101.6 -> 105.6   code 72.0 -> 77.3   prose 26.9 -> 31.5` \
+    `#   best aggregate 503.3 -> 530.0 tok/s` \
+    `# --enforce-eager is a property of the NVFP4-KV/b12x lane, NOT of this model: the b12x` \
+    `# kernels require it, marlin does not. Keep eager ONLY on the b12x lane, and on the` \
+    `# topkfix image (docs/TOPK-OVERSUSCRIPTION-FIX.md), which deadlocks under graphs.` \
+    --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE"}' \
     --tool-call-parser glm47 --enable-auto-tool-choice \
     --reasoning-parser glm45 --chat-template /models/glm-5.3-flash-nvfp4/chat_template_mm.jinja \
     --default-chat-template-kwargs '{"enable_thinking": false}' \
