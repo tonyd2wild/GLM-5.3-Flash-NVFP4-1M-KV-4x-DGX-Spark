@@ -344,6 +344,9 @@ The density win above is **not free** — we ran both lanes back-to-back on the 
 
 - [`overlay-dflash2/`](overlay-dflash2/) — the DFlash2 vLLM overlay: patches plus a CPU
   simulator that validates the KV geometry before you boot a node.
+- [`docker/topkfix/`](docker/topkfix/) — exact-`torch.topk` top-k fix for Disease 1
+  (cleaner than the SM-count gate). See
+  [`docs/TOPK-OVERSUSCRIPTION-FIX.md`](docs/TOPK-OVERSUSCRIPTION-FIX.md).
 - [`docs/SM121-CRASH-FORENSICS-2026-08-27.md`](docs/SM121-CRASH-FORENSICS-2026-08-27.md) — the
   two diseases behind "random" deaths, and the gate suite.
 - [`docs/DEPLOY-REPORT.md`](docs/DEPLOY-REPORT.md) — every failure and receipt from deploy day.
