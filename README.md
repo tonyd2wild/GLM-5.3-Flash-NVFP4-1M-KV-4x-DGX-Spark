@@ -40,12 +40,36 @@ or history — both are labelled as such.**
 
 | | |
 |---|---|
-| **KV pool** | **3,895,606 fp8 tokens** — 3.72x a full 1M-token context |
+| **KV pool** | **3,834,498 fp8 tokens** — 3.66x a full 1M-token context (0.86 GiB goes to graph buffers) |
 | **Context** | **1,048,576** (model-native 1M) |
 | **KV pin** | `--kv-cache-memory 25769803776` (**24 GiB/rank**) |
 | **Speculative decoding** | **DFlash2**, `num_speculative_tokens: 7` |
-| Single stream | **54.5 tok/s** (see [Performance](#performance) — the prompt matters more than the config) |
-| Prefill | **4,141.8 tok/s** |
+| **Concurrency** | `--max-num-seqs 64` · `--max-num-batched-tokens 16384` |
+| **CUDA graphs** | `cudagraph_mode: FULL_AND_PIECEWISE` — **not** `--enforce-eager` on this lane |
+| **Aggregate throughput** | **530.0 tok/s** @C48 (was 183.1 @C6 before the three changes below) |
+| Single stream | **105.6** count-to-100 · **77.3** code · **31.5** prose (temperature 0, median of 3) |
+| Prefill | **1,863 tok/s** warmed @114K prompt · TTFT **54.8 s** (was 1,194 / 95.4 s) |
+
+### What changed, and what each part bought (measured 2026-08-31 → 09-02)
+
+| change | effect |
+|---|---|
+| `--max-num-seqs` 6 → **64** | aggregate **183 → 503 tok/s**. The cap was the constraint, not the fabric — the baseline curve was still climbing when it hit C6. Single stream unaffected by design. |
+| `--max-num-batched-tokens` 8192 → **16384** | prefill **+52–79%**, TTFT @114K **95.4 s → 54.8 s**. Costs ~3% aggregate. |
+| `--enforce-eager` → **`FULL_AND_PIECEWISE`** ([#5](https://github.com/tonyd2wild/GLM-5.3-Flash-NVFP4-1M-KV-4x-DGX-Spark/pull/5)) | aggregate **503 → 530**, and the only change that lifted **single stream**: prose **+17%**, code +10%, count-to-100 +4%. |
+
+> **On `--enforce-eager`:** an earlier revision of this README told you to keep it, citing a
+> −19% measurement. That measurement tested plain `PIECEWISE`, which forces piecewise graphs
+> onto the *decode* path. `FULL_AND_PIECEWISE` uses FULL for uniform decode batches and
+> piecewise only for mixed/prefill, and it is **faster than eager on every prompt type**.
+> `--enforce-eager` is a property of the **NVFP4-KV/b12x lane**, not of this model — the b12x
+> kernels require it, marlin does not. Keep it on the b12x lane and on the
+> [topkfix image](docs/TOPK-OVERSUSCRIPTION-FIX.md), which deadlocks under graphs.
+
+> **Quote the prompt and the temperature with any tok/s number for this model.** Acceptance
+> is content-driven, so the same engine measures 105.6 on count-to-100 and 31.5 on dense
+> prose, minutes apart. The harness ([`probes/bench_glm53_tp4.py`](probes/bench_glm53_tp4.py))
+> uses a fixed 8-prompt set at temperature 0 with median-of-N for exactly this reason.
 | Weights | abliterated or stock NVFP4, drop-in either way |
 | Vision | on (`chat_template_mm.jinja`) |
 | Thinking | off by default |
