@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 # fleet_watchdog.sh -- auto-recovery for the GLM-5.3 vLLM multi-node fleet.
-# Runs on Reddie (head, rank 0). Probes /health; on N consecutive failures,
-# tears down ALL containers, runs the GB10 memory ritual, relaunches
+# Runs on Reddie (head, rank 0). Each probe checks that every rank's container is
+# running, then /health, then a one-token canary request. On N consecutive failures
+# it tears down ALL containers, runs the GB10 memory ritual, relaunches
 # workers-first (rank 3 -> 2 -> 1) then the head (rank 0), waits for ready.
+#
+# Why more than /health: in a failover test on DeepSeek-V4.1-Flash (same vLLM
+# multi-node mp executor, four GX10), killing one worker left the head at /health 200
+# with nothing in its log, and client requests hung with no reply until an NCCL timeout
+# took the head down ~6 min later. The engine blocks in a collective and stops logging,
+# so neither /health nor log parsing sees it. Not reproduced on GLM-5.3 itself; the
+# mechanism is the same.
 #
 # vLLM v1 CANNOT recover a dead engine core. Docker restart policies are unsafe
 # here: headless workers exit 0 on head death (on-failure never fires) and the
@@ -17,11 +25,17 @@ CHECK_INTERVAL=60          # seconds between probes
 FAIL_THRESHOLD=3           # consecutive failures before recovery fires
 CURL_TIMEOUT=15            # per-probe timeout
 READY_TIMEOUT=3600         # matches VLLM_ENGINE_READY_TIMEOUT_S in launch script
+CANARY_URL="http://127.0.0.1:8000/v1/completions"
+CANARY_MODEL="glm-5.3-flash"   # --served-model-name in the launch script
+CANARY_TIMEOUT=90          # chunked prefill interleaves it with long prompts
+MAX_RECOVERIES=3           # failed relaunches in a row before giving up
 CONTAINER="vllm_glm53"
 LAUNCH_SCRIPT='~/launch-glm53-tp4-24g.sh'   # same path on every node
 SSH_KEY="$HOME/.ssh/id_ed25519_shared"
 SSH_OPTS=(-i "$SSH_KEY" -o ConnectTimeout=15 -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
 LOCKFILE="$HOME/.fleet_watchdog.lock"
+PAUSE_FLAG="$HOME/.fleet_watchdog.pause"    # touch to pause (maintenance); rm to resume
+GIVEUP_FLAG="$HOME/.fleet_watchdog.gaveup"  # written after MAX_RECOVERIES; rm to re-arm
 LOGFILE="$HOME/fleet_watchdog.log"
 POST_TEARDOWN_SLEEP=10     # let master-port TIME_WAIT / NVRM settle
 INTER_WORKER_SLEEP=5
@@ -50,6 +64,25 @@ run_on() {  # run_on <rank> <command string>
 }
 
 healthy() { curl -sf -m "$CURL_TIMEOUT" -o /dev/null "$HEALTH_URL"; }
+
+# probe: prints the reason and returns 1 on the first failed check.
+probe() {
+  local r target state
+  for r in "${RANK_ORDER[@]}"; do
+    target="${NODE[$r]}"
+    if [[ -z "$target" ]]; then
+      state=$(docker inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || echo missing)
+    else
+      state=$(ssh "${SSH_OPTS[@]}" "$target" "docker inspect -f '{{.State.Status}}' $CONTAINER 2>/dev/null || echo missing" 2>/dev/null || echo unreachable)
+    fi
+    [[ "$state" == running ]] || { echo "rank $r container: $state"; return 1; }
+  done
+  healthy || { echo "health"; return 1; }
+  curl -sf -m "$CANARY_TIMEOUT" -o /dev/null "$CANARY_URL" -H 'Content-Type: application/json' \
+    -d "{\"model\":\"$CANARY_MODEL\",\"prompt\":\"1\",\"max_tokens\":1,\"temperature\":0}" \
+    || { echo "canary"; return 1; }
+  return 0
+}
 
 # The unconditional flusher MUST be running on EVERY node for the whole relaunch,
 # not just a one-shot drop_caches. A threshold-triggered flusher can sit below its
@@ -118,15 +151,30 @@ fi
 log "watchdog started (pid $$, interval ${CHECK_INTERVAL}s, threshold $FAIL_THRESHOLD)"
 
 fails=0
+failed_recoveries=0
 while true; do
-  if healthy; then
-    (( fails > 0 )) && log "health OK again after $fails failure(s)"
+  if [[ -f "$GIVEUP_FLAG" || -f "$PAUSE_FLAG" ]]; then
+    fails=0; sleep "$CHECK_INTERVAL"; continue
+  fi
+  if why=$(probe); then
+    (( fails > 0 )) && log "probe OK again after $fails failure(s)"
     fails=0
+    failed_recoveries=0
   else
     fails=$((fails + 1))
-    log "health FAIL ($fails/$FAIL_THRESHOLD): $HEALTH_URL"
+    log "probe FAIL ($fails/$FAIL_THRESHOLD): $why"
     if (( fails >= FAIL_THRESHOLD )); then
-      recover || log "recovery attempt failed; probing continues"
+      if recover; then
+        failed_recoveries=0
+      else
+        failed_recoveries=$((failed_recoveries + 1))
+        log "recovery attempt failed ($failed_recoveries/$MAX_RECOVERIES)"
+        # A boot that keeps failing needs a person; relaunching every few minutes hides the cause.
+        if (( failed_recoveries >= MAX_RECOVERIES )); then
+          echo "gave up $(date '+%F %T') after $failed_recoveries failed recoveries" > "$GIVEUP_FLAG"
+          log "=== GIVING UP; rm $GIVEUP_FLAG to re-arm ==="
+        fi
+      fi
       fails=0
     fi
   fi
