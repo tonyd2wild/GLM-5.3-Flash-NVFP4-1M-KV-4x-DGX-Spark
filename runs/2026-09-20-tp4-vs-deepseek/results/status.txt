@@ -1,0 +1,71 @@
+05:53:27 GLM TP4 speed run start; DeepSeek torn down; restore = bash /root/sr_boot.sh sr2-e12-final500k-s16-go.sh <label>
+06:33:27 SERVING g00-baseline (860s boot, KV 3,834,498)
+06:41:07 BOOT g01-cutlass (MOE_BACKEND=flashinfer_cutlass)
+06:59:53 BOOT-FAILED g01-cutlass rc=2
+06:59:53 BOOT g02-k9 (SPEC_K=9)
+07:00:28 BOOT-FAILED g02-k9 rc=143
+07:00:28 dq: two boot failures, stopping
+07:00:28 dq exited
+07:00:46 BOOT g02-k9 (SPEC_K=9)
+07:14:36 SERVING g02-k9
+07:20:35 SCREENED g02-k9
+07:20:35 BOOT g03-ep (VLLM_EXTRA_EP=1)
+07:34:21 SERVING g03-ep
+07:40:01 SCREENED g03-ep
+07:40:01 BOOT g07-k5 (SPEC_K=5)
+07:41:42 BOOT-FAILED g07-k5 rc=2
+07:41:42 BOOT g08-nospec (SPEC=none)
+07:52:17 SERVING g08-nospec
+07:59:55 SCREENED g08-nospec
+07:59:55 BOOT g07-k5 (SPEC_K=5)
+08:14:10 SERVING g07-k5
+08:20:05 SCREENED g07-k5
+08:20:05 BOOT g04-mnbt8k (MNBT=8192)
+08:34:06 SERVING g04-mnbt8k
+08:38:56 SCREENED g04-mnbt8k
+08:38:56 BOOT g05-humming (MOE_BACKEND=humming)
+08:53:13 SERVING g05-humming
+08:59:34 SCREENED g05-humming
+08:59:34 BOOT g09-rep7 (SPEC_K=7)
+09:13:37 SERVING g09-rep7
+09:19:13 SCREENED g09-rep7
+09:19:13 BOOT g10-rep9 (SPEC_K=9)
+09:33:14 SERVING g10-rep9
+09:38:22 SCREENED g10-rep9
+09:38:22 dq: queue empty
+09:38:22 dq exited
+09:38:32 FINAL-BOOT g11-ship (MNBT=8192)
+09:52:18 FINAL-SERVING g11-ship
+10:03:31 FINAL-MEASURED g11-ship
+10:04:01 FINAL-BOOT g12-ship9 (MNBT=8192 SPEC_K=9)
+10:18:03 FINAL-SERVING g12-ship9
+10:30:05 FINAL-MEASURED g12-ship9
+10:30:13 CHAIN2 final done, hiconc next
+10:40:25 CHAIN2 hiconc done
+10:47:34 CHAIN2B hiconc2 done
+10:47:34 CHAIN2B hold cleared, DS handback released
+10:47:41 CHAIN4 starting second boot of the shipping config
+10:47:41 FINAL-BOOT g13-ship7rep (MNBT=8192 SPEC_K=7)
+11:02:00 FINAL-SERVING g13-ship7rep
+11:12:58 FINAL-MEASURED g13-ship7rep
+11:21:55 CHAIN4 hiconc done
+11:26:44 CHAIN4 hiconc2 done
+11:26:44 CHAIN4 done, DS handback released
+11:27:31 CHAIN3v3 hold cleared and GLM work idle, booting DS
+11:28:02 CHAIN3v3 done rc=0
+11:30:58 FINAL-BOOT g14-nvfp4attn (MODEL_DIR=keys-glm53-nvfp4-attn MNBT=8192 SPEC_K=7)
+11:34:11 FINAL-BOOT-FAILED g14-nvfp4attn
+11:34:29 CHAIN5 g14 work finished, handing back
+11:44:00 FINAL-BOOT g15-nvfp4attn2 (MODEL_DIR=keys-glm53-nvfp4-attn2 MNBT=8192 SPEC_K=7)
+11:46:48 FINAL-BOOT-FAILED g15-nvfp4attn2
+11:47:10 CHAIN6 g14 work finished, handing back
+11:50:54 CHAIN6 first handback failed, retrying once
+11:55:54 FINAL-BOOT g16-nvfp4attn3 (MODEL_DIR=keys-glm53-nvfp4-attn3 MNBT=8192 SPEC_K=7)
+12:05:00 FINAL-BOOT-FAILED g16-nvfp4attn3
+12:05:03 CHAIN7 g14 work finished, handing back
+12:08:42 CHAIN7 first handback failed, retrying once
+12:12:32 FINAL-BOOT g17-nvfp4attn4 (MODEL_DIR=keys-glm53-nvfp4-attn4 MNBT=8192 SPEC_K=7)
+12:12:54 CHAIN7 done rc=0
+12:14:04 FINAL-BOOT g17-nvfp4attn4 (MODEL_DIR=keys-glm53-nvfp4-attn4 MNBT=8192 SPEC_K=7)
+12:23:11 FINAL-BOOT-FAILED g17-nvfp4attn4
+12:23:38 CHAIN9 g14 work finished, handing back

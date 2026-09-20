@@ -1,0 +1,9 @@
+g00-baseline | KV 3,834,498 | quality PASS | agg C1 56.2 C3 98.6 C6 143.6 | code 73.6 json 74.2 math 86.8 prose 34.2 count 114.5 fmt 98.8 | pf8k 1385 pf32k 1043 | idle count 116.1 code 67.5
+g02-k9 | KV 3,465,506 | quality PASS | agg C1 52.3 C3 97.2 C6 135.9 | code 67.5 json 68.5 math 65.7 prose 35.5 count 129.4 fmt 106.2 | pf8k 912 pf32k 687
+g03-ep | KV 3,834,498 | quality PASS | agg C1 49.1 C3 92.8 C6 134.4 | code 56.1 json 66.0 math 71.4 prose 35.8 count 88.3 fmt 85.2 | pf8k 720 pf32k 1036
+g08-nospec | KV 4,205,579 | quality PASS | agg C1 25.6 C3 55.4 C6 91.2 | code 26.3 json 26.4 math 26.3 prose 26.4 count 26.3 fmt 26.3 | pf8k 1074 pf32k 2053
+g07-k5 | KV 3,895,606 | quality PASS | agg C1 45.8 C3 96.9 C6 136.1 | code 76.7 json 42.1 math 65.8 prose 35.1 count 81.9 fmt 68.9 | pf8k 634 pf32k 961
+g04-mnbt8k | KV 3,895,606 | quality PASS | agg C1 52.9 C3 96.4 C6 151.7 | code 67.1 json 73.8 math 67.1 prose 32.1 count 94.9 fmt 92.5 | pf8k 1601 pf32k 1960
+g05-humming | KV 3,834,498 | quality PASS | agg C1 48.8 C3 95.2 C6 131.8 | code 70.5 json 58.7 math 50.1 prose 33.6 count 89.5 fmt 87.6 | pf8k 830 pf32k 625
+g09-rep7 | KV 3,834,498 | quality PASS | agg C1 49.8 C3 96.2 C6 137.8 | code 56.5 json 56.6 math 79.7 prose 37.4 count 82.5 fmt 91.8 | pf8k 1148 pf32k 918
+g10-rep9 | KV 3,465,506 | quality PASS | agg C1 53.4 C3 99.2 C6 136.0 | code 78.8 json 67.8 math 69.2 prose 33.1 count 100.2 fmt 103.6 | pf8k 1662 pf32k 1444

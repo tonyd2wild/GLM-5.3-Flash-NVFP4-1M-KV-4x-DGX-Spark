@@ -1,0 +1,14 @@
+vllm:spec_decode_num_drafts_total{engine="0",model_name="glm-5.3-flash"} 40435.0
+vllm:spec_decode_num_draft_tokens_total{engine="0",model_name="glm-5.3-flash"} 363915.0
+vllm:spec_decode_num_accepted_tokens_total{engine="0",model_name="glm-5.3-flash"} 118593.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="glm-5.3-flash",position="0"} 30283.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="glm-5.3-flash",position="1"} 21695.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="glm-5.3-flash",position="2"} 16225.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="glm-5.3-flash",position="3"} 12719.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="glm-5.3-flash",position="4"} 10506.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="glm-5.3-flash",position="5"} 8740.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="glm-5.3-flash",position="6"} 7351.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="glm-5.3-flash",position="7"} 6026.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="glm-5.3-flash",position="8"} 5048.0
+  draft 363915 accepted 118593 acceptance 0.326
+  drafts 40435 accepted/draft 2.93 tokens per step 3.93

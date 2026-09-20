@@ -1,0 +1,40 @@
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/model_loader/default_loader.py", line 427, in load_weights
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]     loaded_weights = model.load_weights(self.get_all_weights(model_config, model))
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/glm4_1v.py", line 2343, in load_weights
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]     return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/model_loader/reload/torchao_decorator.py", line 50, in patched_model_load_weights
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]     return original_load_weights(self, weights, *args, **kwargs)
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/utils.py", line 423, in load_weights
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]     autoloaded_weights = set(self._load_module("", self.module, weights))
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/utils.py", line 357, in _load_module
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]     yield from self._load_module(
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/utils.py", line 330, in _load_module
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]     loaded_params = module_load_weights(weights)
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]   File "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py", line 1018, in load_weights
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]     return loader.load_weights(weights)
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/model_loader/reload/torchao_decorator.py", line 50, in patched_model_load_weights
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]     return original_load_weights(self, weights, *args, **kwargs)
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/utils.py", line 423, in load_weights
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]     autoloaded_weights = set(self._load_module("", self.module, weights))
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/utils.py", line 357, in _load_module
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]     yield from self._load_module(
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/utils.py", line 330, in _load_module
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]     loaded_params = module_load_weights(weights)
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]   File "/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py", line 877, in load_weights
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]     weight_loader(param, loaded_weight, shard_id)
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/linear.py", line 932, in weight_loader_v2
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]     param.load_merged_column_weight(
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]   File "/usr/local/lib/python3.12/dist-packages/vllm/model_executor/parameter.py", line 175, in load_merged_column_weight
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]     assert param_data.shape == loaded_weight.shape
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0 pid=199) ERROR 09-20 11:33:56 [multiproc_executor.py:927] AssertionError
+(Worker_TP0 pid=199) 

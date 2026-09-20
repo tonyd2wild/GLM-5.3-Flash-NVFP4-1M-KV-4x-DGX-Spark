@@ -1,0 +1,18 @@
+vllm:spec_decode_num_drafts_total{engine="0",model_name="glm-5.3-flash"} 40435.0
+vllm:spec_decode_num_draft_tokens_total{engine="0",model_name="glm-5.3-flash"} 363915.0
+vllm:spec_decode_num_accepted_tokens_total{engine="0",model_name="glm-5.3-flash"} 118593.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="glm-5.3-flash",position="0"} 30283.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="glm-5.3-flash",position="1"} 21695.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="glm-5.3-flash",position="2"} 16225.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="glm-5.3-flash",position="3"} 12719.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="glm-5.3-flash",position="4"} 10506.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="glm-5.3-flash",position="5"} 8740.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="glm-5.3-flash",position="6"} 7351.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="glm-5.3-flash",position="7"} 6026.0
+vllm:spec_decode_num_accepted_tokens_per_pos_total{engine="0",model_name="glm-5.3-flash",position="8"} 5048.0
+  draft 363915 accepted 118593 acceptance 0.326
+  drafts 40435 accepted/draft 2.93 tokens per step 3.93
+=== hiconc2 g12-ship9 10:40:38
+  C24: mean agg 211.0 | ceili 497 (35.2/stream) codin 294 (22.0/stream) math 294 (22.1/stream) forma 268 (26.0/stream) json 256 (20.2/stream) reaso 185 (12.7/stream) summa 163 (13.3/stream) prose 119 (8.3/stream) narra 109 (7.4/stream)
+  C32: mean agg 230.7 | ceili 459 (31.4/stream) forma 412 (31.9/stream) math 314 (20.4/stream) codin 311 (21.3/stream) json 204 (15.1/stream) reaso 201 (12.9/stream) summa 160 (11.1/stream) prose 128 (8.1/stream) narra 117 (7.3/stream)
+=== hiconc2 g12-ship9 done 10:47:34
