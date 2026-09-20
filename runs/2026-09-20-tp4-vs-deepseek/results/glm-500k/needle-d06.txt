@@ -1,0 +1,3 @@
+calibration: 3.520 prompt tokens per filler word
+{"target": 131072, "prompt_tokens": 131108, "depth": 0.6, "ttft_s": 52.4, "prefill_tok_s": 2502.1, "answer": "COPPER-LANTERN-8315", "pass": true}
+{"target": 450000, "prompt_tokens": 450336, "depth": 0.6, "ttft_s": 275.1, "prefill_tok_s": 1637.1, "answer": "# The vault passphrase\n\nCOPPER-LANTERN-8315", "pass": true}

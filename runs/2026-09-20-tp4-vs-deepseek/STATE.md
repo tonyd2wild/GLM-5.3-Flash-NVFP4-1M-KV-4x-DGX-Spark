@@ -847,3 +847,47 @@ abliteration. If the needle then passes at 131K depth 0.3, the interaction is co
 Also corrected in the write-up: the credits named "the keys build" generically and did not name the actual parent
 and donor. Note the sibling `drowzeys/keys-GLM-5.3-Flash-NVFP4-ablit-l15-43-mtp-l45` on the Hub is
 **RedHat-parented** with layers 15-43, so it is a different lineage from what we serve, not the same pack.
+
+## 15:21-15:33 UTC - the NVFP4 lane re-booted at 500K, and the 131K miss does not reproduce
+
+Tony asked for the fleet back on GLM with the best config, then for a re-boot at 500K max context with the
+needles re-run. Both done. Config: `MODEL_DIR=keys-glm53-nvfp4-attn3 NVFP4_PATCH=1 MNBT=8192 SPEC_K=7
+MAXLEN=500000`. Boot 13m49s, quality gate **PASS 5/5**, `quant_algo=W4A16_NVFP4`, MarlinNvFp4 kernel,
+weights 43.76 GiB/rank, KV pool **3,532,196 tokens (7.06x at 500K)**.
+
+### Needles: 5 of 5 exact
+
+| needle | prompt tokens | prefill tok/s | result |
+|---|---|---|---|
+| 65K depth 0.3 | 65,360 | 1,485 | PASS |
+| **131K depth 0.3** | 131,258 | 1,647 | **PASS** - this is the case that FAILED on the 1M lane |
+| 262K depth 0.3 | 261,824 | 1,588 | PASS |
+| 131K depth 0.6 | 131,108 | 2,502 | PASS |
+| 450K depth 0.6 | 450,336 | 1,637 | PASS - 90% of the window |
+
+**So the one quality failure of the night was tied to the 1M window, not to the NVFP4 quantization.** Same
+checkpoint, same quantized `o_proj` tensors, same prompt at 131,258 tokens, temperature 0, and it passes at 500K
+having failed at 1M. The quantization is therefore cleared of that failure, and the remaining suspect is
+something that scales with `max_model_len` - most likely the DSA indexer's top-k over a k-pool sized for 1M, or
+the block-table geometry. Unverified: confirming it means re-running 131K depth 0.3 on a fresh 1M lane.
+
+Note this also means **capping clients at 500K on a 1M lane would not have helped**, since the failing request
+was already only 131K. The window itself is the variable, not the request size.
+
+### Two corrections to earlier entries in this file
+
+1. **Retracted: "prefill is ~20% slower at 500K".** The 131K depth-0.6 needle measured 2,502 tok/s on the same
+   lane where the identical-length depth-0.3 needle measured 1,647. The 500K range across five needles is
+   1,485-2,502 tok/s, which fully overlaps the 1M lane's 1,965-2,004. There is no window effect in this data;
+   the spread is warmup and prompt-position variance, and I should not have attributed it to context length.
+2. **Still open: the KV pool is 9% smaller at 500K** (3,532,196 vs 3,895,606 tokens) despite `--kv-cache-memory`
+   being pinned at 24 GiB in both. If the pool were simply bytes divided by bytes-per-token it would be
+   identical, so something scales with `max_model_len` - plausibly the hybrid linear-attention state or the
+   block tables at block size 2304. Worth understanding before quoting pool sizes as a function of the window.
+
+Idle decode at 500K: counting 137.1-144.0, code 89.5-93.4, step 55-59 ms - unchanged from the 1M NVFP4 lane and
+down from ~67.5 ms on bf16, so the quantization gain is intact at the smaller window.
+
+**Recommendation on hold: stay at 500K.** It is the configuration with verified retrieval (5/5 up to 450K), it
+matches DeepSeek's window so the head-to-head is apples-to-apples, and it costs only capability above 500K that
+nothing has exercised. Going back to 1M should be gated on re-running the needles there first.
