@@ -359,6 +359,8 @@ All in [`tools/`](tools/), all run as root on the head.
 | `glm_final.sh`, `ds_final.sh` | boot plus the full measurement in one step |
 | `glm_run.sh`, `glm_dq.sh`, `dist_glm.sh` | single cycle, dynamic queue with a STOP_AT and a two-failure stop, launcher distribution |
 
+[`REPRODUCE.md`](REPRODUCE.md) explains how to rebuild this from about 4 GiB plus two minutes of local disk work, why the shard rewrite is mandatory, and why the build is specific to one base checkpoint.
+
 [`SWAP.md`](SWAP.md) is the operator page: one command each way between the two models, the knob table, and the
 two traps that break a swap.
 
