@@ -1,0 +1,23 @@
+{
+ "dir": "nvidia-glm53-attn",
+ "files": {
+  "model.safetensors.index.json": {
+   "bytes": 16095613,
+   "sha256": "6204d217c93f277f50425623cb336f9b83daf05b60a8682446559f60b7822880",
+   "sha256_canonical": "59402819d4ff4de423306edeffb8976e03debcba65e3c9887aa78a0f6ec81076"
+  },
+  "config.json": {
+   "bytes": 6561,
+   "sha256": "b3a0bf0b0a5314bc446f053ebb365503f0b149cded957de61499a754db11107e",
+   "sha256_canonical": "45c48e13c03d21c88fde30fdf719d50cfea796ab50bd7d113ff0172455a959db"
+  },
+  "model-nvfp4attn2-00001-of-00001.safetensors": {
+   "bytes": 3936942668,
+   "sha256": "8aa6a422aa33ba6b1b69e5610a91939760e33dfff83f6bfb225c19bcd8f52528"
+  }
+ },
+ "quant_algo": "W4A16_NVFP4",
+ "ignore_entries": 14,
+ "total_tensors": 148467,
+ "quantized_modules": 36700
+}

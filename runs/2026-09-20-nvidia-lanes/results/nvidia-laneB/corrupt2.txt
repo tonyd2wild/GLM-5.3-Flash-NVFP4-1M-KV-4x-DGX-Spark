@@ -1,0 +1,7 @@
+  long prose    2883 chars,  0 suspect
+  code          3978 chars,  0 suspect
+  json          2061 chars,  0 suspect
+  tool-ish      3635 chars,  0 suspect
+  repetitive    2939 chars,  0 suspect
+
+TOTAL: 0 suspect characters in 15496 generated (CLEAN)

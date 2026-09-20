@@ -1,0 +1,4 @@
+Detected ModelOpt NVFP4 checkpoint (quant_algo=W4A16_NVFP4). Please note that the format is experimental and could change in future.
+Using MarlinNvFp4LinearKernel for NVFP4 GEMM
+Model loading took 43.76 GiB and 338.654276 seconds
+GPU KV cache size: 3,532,196 tokens, Maximum concurrency for 500,000 tokens per request: 7.06x

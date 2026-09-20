@@ -1,0 +1,23 @@
+{
+ "dir": "nvidia-glm53-ablit-attn",
+ "files": {
+  "model.safetensors.index.json": {
+   "bytes": 16095613,
+   "sha256": "848e5aad82c60e5bd8441eb2f4d2a4a9e319bb2fa4bfedc0d3a2ad8d9515eafa",
+   "sha256_canonical": "59402819d4ff4de423306edeffb8976e03debcba65e3c9887aa78a0f6ec81076"
+  },
+  "config.json": {
+   "bytes": 6561,
+   "sha256": "b3a0bf0b0a5314bc446f053ebb365503f0b149cded957de61499a754db11107e",
+   "sha256_canonical": "45c48e13c03d21c88fde30fdf719d50cfea796ab50bd7d113ff0172455a959db"
+  },
+  "model-nvfp4attn2-00001-of-00001.safetensors": {
+   "bytes": 3936942668,
+   "sha256": "92242aea1a6b8ce68d51e1d0dcbeccea0e1465520b7679373051f7619e6399a9"
+  }
+ },
+ "quant_algo": "W4A16_NVFP4",
+ "ignore_entries": 14,
+ "total_tensors": 148467,
+ "quantized_modules": 36700
+}

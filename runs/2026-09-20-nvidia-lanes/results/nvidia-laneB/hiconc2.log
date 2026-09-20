@@ -1,0 +1,4 @@
+=== hiconc2 nvidia-laneB 19:50:35
+  C24: mean agg 319.6 | forma 557 (29.8/stream) ceili 470 (24.9/stream) codin 415 (19.9/stream) math 398 (21.0/stream) json 298 (19.7/stream) reaso 279 (14.2/stream) summa 238 (13.1/stream) prose 200 (9.6/stream) narra 171 (8.1/stream)
+  C32: mean agg 354.3 | forma 551 (23.6/stream) ceili 523 (20.4/stream) codin 504 (17.9/stream) math 452 (18.2/stream) json 343 (16.2/stream) reaso 315 (11.4/stream) summa 255 (10.5/stream) prose 224 (7.8/stream) narra 190 (6.7/stream)
+=== hiconc2 nvidia-laneB done 19:55:22

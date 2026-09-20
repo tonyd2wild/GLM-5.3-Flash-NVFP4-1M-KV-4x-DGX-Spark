@@ -1,0 +1,7 @@
+=== hiconc nvidia-laneB 19:42:03
+  rep 1 done 19:46:21
+  rep 2 done 19:50:35
+  C8: mean-of-medians 202.3 | forma 318 ceili 305 json 253 codin 252
+  C12: mean-of-medians 244.9 | forma 412 ceili 355 json 299 codin 292
+  C16: mean-of-medians 273.8 | forma 439 ceili 381 codin 339 math 327
+=== hiconc nvidia-laneB done 19:50:35
