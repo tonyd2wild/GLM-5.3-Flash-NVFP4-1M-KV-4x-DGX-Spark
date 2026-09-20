@@ -54,6 +54,12 @@ done
 test -f "$MODEL_HOST_PATH/config.json" || { echo "MISSING $MODEL_HOST_PATH/config.json" >&2; exit 3; }
 test -f "$MODEL_HOST_PATH/chat_template_mm.jinja" || { echo "MISSING chat_template_mm.jinja (vision 500s)" >&2; exit 3; }
 test -f "$PATCH_HOME/patches/sparse_attn_indexer_kpool.py" || { echo "MISSING ~/patches/sparse_attn_indexer_kpool.py (dies past ~24K ctx)" >&2; exit 3; }
+if [ -n "${NVFP4_PATCH:-}" ]; then
+  for f in kda.py model.py; do
+    test -f "$PATCH_HOME/patches/nvfp4/$f" || { echo "MISSING: \$PATCH_HOME/patches/nvfp4/$f -- NVFP4_PATCH=1 needs the patched glm5next files (they stop quant_config being forced to None for the attention projections). See runs/2026-09-20-tp4-vs-deepseek." >&2; exit 3; }
+  done
+  echo "NVFP4_PATCH on: attention projections will be built from the checkpoint quant config"
+fi
 test -f /var/tmp/models/GLM-5.3-Flash-DFlash2/config.json || { echo "MISSING drafter /var/tmp/models/GLM-5.3-Flash-DFlash2" >&2; exit 3; }
 mkdir -p "$CACHE_HOST_PATH"
 docker rm -f "$NAME" 2>/dev/null || true
@@ -85,6 +91,8 @@ docker run --gpus all -d --name "$NAME" --restart no \
   -v "$MODEL_HOST_PATH:$MODEL_PATH:ro" \
   -v "$CACHE_HOST_PATH:/cache" \
   -v $PATCH_HOME/patches/sparse_attn_indexer_kpool.py:/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/sparse_attn_indexer_kpool.py:ro \
+  ${NVFP4_PATCH:+-v $PATCH_HOME/patches/nvfp4/kda.py:/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/kda.py:ro} \
+  ${NVFP4_PATCH:+-v $PATCH_HOME/patches/nvfp4/model.py:/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia/model.py:ro} \
   -v /var/tmp/models/GLM-5.3-Flash-DFlash2:/models/dflash2-draft:ro \
   $PREFIX_MOUNT $ROCE_MOUNTS \
   -e VLLM_HOST_IP=$HOST_IP -e HF_HOME=/cache/huggingface \

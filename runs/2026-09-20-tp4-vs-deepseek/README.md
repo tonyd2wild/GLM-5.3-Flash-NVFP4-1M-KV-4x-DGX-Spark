@@ -10,27 +10,45 @@ prompts rather than on each project's own benchmark.
 
 ## Headline
 
-GLM-5.3-Flash TP4 **serves cleanly at 1M context with a 3.9M-token KV pool** and passes the quality gate, but it
-**does not beat DeepSeek-V4.1-Flash on DeepSeek's prompt set**. Measured as medians of three passes on two
-independent boots, it loses all six named categories by 10 to 16% and the C6 aggregate by 24%.
+The recipe as it stood **loses** to DeepSeek-V4.1-Flash by 10 to 16% on all six named categories. Finding out
+why produced a per-step cost model, the model pointed at 18 GiB of bf16 weights, and quantizing them turned the
+result around: the final build **beats DeepSeek on four of the six** on tok/s and on four of five on a
+tokenizer-neutral metric, at parity on C1 aggregate.
 
-Four results from the night are worth more than the config that came out of it:
+**Final build (`g18`): 13.88 GiB of non-expert projections in NVFP4 (W4A16), medians of 3 passes.**
 
-1. **A validated per-step cost model.** `step_ms = 34.6 + 4.12 x verify_tokens`, fitted across four draft
-   lengths with residuals under 2.2 ms. Its slope matches the checkpoint's routed-expert bytes to within 8%, and
-   its intercept is explained to within 0.8 ms by **17.7 ms of bf16 non-expert weights read on every step**.
-2. **A quantified, actionable bound.** NVFP4 on 13.88 GiB of those weights is worth **x1.179 on every
-   category**, which would put five of the six at or above DeepSeek. Four boots established that the blocker is
-   three lines of `quant_config=None` in `glm5next/nvidia/`, not the checkpoint or the quantization.
-3. **A plus-or-minus 25% run-to-run band on single passes**, which invalidated the counting and structure "wins"
-   the first boots showed, and a 3-rep median protocol that reproduces across boots to within 5% on eight of
-   nine categories.
-4. **A correctness landmine** in this checkpoint class that would have served plausible-but-wrong text, with a
-   one-line fix.
+| C1 per-stream tok/s | DeepSeek | GLM bf16 | **GLM NVFP4** | vs DeepSeek | vs GLM bf16 |
+|---|---|---|---|---|---|
+| **structure** | 98.6 | 89.0 | **115.5** | **+17.1%** | +30% |
+| **math** | 87.5 | 74.4 | **95.6** | **+9.3%** | +29% |
+| **prose** | 39.0 | 33.3 | **42.3** | **+8.5%** | +27% |
+| **counting** | 113.0 | 95.8 | **116.0** | **+2.7%** | +21% |
+| code | 90.7 | 76.2 | 85.6 | -5.6% | +12% |
+| JSON | 75.8 | 67.9 | 71.3 | -5.9% | +5% |
+| C1 aggregate | 61.3 | 53.6 | **61.7** | **+0.7%** | +15% |
+| C3 aggregate | 128.9 | 99.0 | 112.2 | -13% | +13% |
 
-Also measured: k=7 is not a tuned value, it is the DFlash2 drafter's `block_size 8` minus one; draft acceptance
-decays geometrically at about 0.8 per position, which caps speculation as a lever; and GLM serves 32 concurrent
-streams where DeepSeek's lane refuses more than 16.
+On **chars/s**, which depends on neither vocabulary, GLM wins four of five: structure +14%, math +5%, code +3%,
+prose +2%, JSON -2%. Code loses on tok/s and wins on chars/s because GLM emits 3.45 characters per code token
+against DeepSeek's 3.15.
+
+How this was reached, and the parts worth reusing:
+
+1. **A validated per-step cost model.** `step_ms = 34.6 + 4.12 x verify_tokens`, fitted across four draft lengths
+   with residuals under 2.2 ms. Its slope matches the checkpoint's routed-expert bytes to 8%; its intercept is
+   explained to within 0.8 ms by **17.7 ms of bf16 non-expert weights read on every step**. It predicted x1.179
+   from quantizing them, before any such build existed. Measured: x1.05 to x1.30 per category, step 67.6 -> 57 ms.
+2. **The blocker was two lines of the model, not the checkpoint.** `kda.py:172` and `model.py:331` force
+   `quant_config=None` on the attention projections, so a packed NVFP4 weight cannot load into a bf16 parameter.
+   Four boots failed before I read the constructor instead of the loader.
+3. **A plus-or-minus 25% run-to-run band** on single passes, which invalidated early apparent wins and, at the
+   end, corrected this build's own code and JSON numbers downward when a third pass was added.
+4. **A W4A4 correctness landmine** in this checkpoint class, with a one-line fix that the winning build needs
+   anyway.
+
+**Quality is not fully settled.** The gate passes 5/5 and three of four needles return the passphrase exactly
+(65K, 98K, and 131K at depth 0.6). One needle, 131K at depth 0.3, dropped a digit. A short gate cannot clear a
+numerics change, and there is no bf16 needle at those lengths from this run to say whether it is a regression.
 
 ## What was already known, and what this run adds
 
@@ -170,47 +188,78 @@ is worse than the tok/s comparison suggests. Both are published because only one
 
 ## Verdict
 
-**GLM-5.3-Flash TP4 did not beat DeepSeek-V4.1-Flash on DeepSeek's prompts.** It loses all six named
-categories by 10 to 16%, C6 aggregate by 24%, and the concurrency sweep by 40 to 68% up to C16. It wins on
-context (1M against 500K, a 3.9M-token KV pool), on vision, and on how many streams one lane can hold.
+**GLM-5.3-Flash TP4 beats DeepSeek-V4.1-Flash on four of the six named categories once its bf16 attention and
+MLP projections are quantized to NVFP4**, and is at parity on C1 aggregate. It loses code and JSON on tok/s by
+about 6%, though code wins on chars/s. DeepSeek keeps concurrency: C3 aggregate is still its by 13%.
 
-The gap is not a tuning gap. It is 4.5 bits per weight against EXL3's 3.5, plus 18 GiB of bf16 non-expert
-weights that this model's own implementation hardcodes as bf16. Both numbers are measured, and the second one is
-worth x1.179 to whoever removes three lines of `quant_config=None` from `glm5next/nvidia/`.
+The honest shape of the night is that **no configuration knob did this**. Every knob tried landed at or below the
+first baseline boot, inside a plus-or-minus 25% noise band. What did it was measuring where the step time goes,
+finding 17.7 ms of it in weights nobody had quantized, and then discovering the obstacle was two lines of the
+model implementation rather than anything about the checkpoint.
 
-## Why decode cannot be tuned past DeepSeek here
+Serve-readiness: **not yet, for long-context work.** One of four needles dropped a digit at 131K depth 0.3 while
+65K, 98K and 131K depth 0.6 were exact. A 5/5 short-prompt gate cannot clear a numerics change, and this run has
+no bf16 needle at those lengths for comparison. The next session should run that baseline, and if the regression
+is real, try excluding `q_proj`/`k_proj` (1.06 GiB of the 13.88, worth about 0.8 ms of the 10.4 ms saved) since
+those feed attention scores directly.
+
+## Where the step time goes
 
 Geometry from `config.json`: hidden 4096, `moe_intermediate_size` 2048 (512/rank at TP4), 288 routed experts,
-top-8, 42 of 45 layers sparse. Routed MoE is 304.4B params = 171.2 GB = **42.8 GB/rank**. At one sequence with
-k=9 the union of experts touched is at most 80 of 288, so a step streams **~11.9 GB/rank**; at GB10's
-273 GB/s that is **~43 ms**, which is the ~66 ms step measured end to end. Decode is bandwidth-bound by 7x at
-64 sequences and by more than 100x at one.
+top-8, 42 of 45 layers sparse. Routed MoE is 163.27 GiB, or 40.8 GiB/rank.
 
-Both ends of the speculation range confirm it. With no drafter at all, **every category pins at 26.3 tok/s** -
-the bare single-token step (~38 ms), content-independent. Ten tokens per step costs only ~66 ms, so extra
-draft tokens are cheap; what limits code and prose is **acceptance**, not step time. Code accepts 5.1 of 8 and
-would need ~6.9 to reach DeepSeek's 90.7; prose accepts 1-2. No configuration knob raises acceptance, and no
-MoE backend changes the bytes. A lower-bit GLM-5.3-Flash checkpoint would, and none exists on this fleet (the
-378 GB `GLM-5.3-Int4-Int8Mix` on disk is a different model: `GlmMoeDsaForCausalLM`, hidden 6144, 78 layers).
+Fitting the step times the harness records at four draft lengths, against verify tokens t:
 
-## What would actually close the gap
+| k | verify tokens | measured step ms p50 | fit |
+|---|---|---|---|
+| none | 1 | 37.7 | 38.7 |
+| 5 | 6 | 61.5 | 59.3 |
+| 7 | 8 | 67.5 | 67.5 |
+| 9 | 10 | 74.5 | 75.7 |
 
-Not a config. The three things that would, in the order they are worth trying:
+**step_ms = 34.6 + 4.12 x verify_tokens**, residuals within 2.2 ms across a 2x range.
 
-1. **A lower-bit GLM-5.3-Flash checkpoint.** Decode here streams 42.8 GB/rank of routed MoE weights at 4.5
-   bits each. DeepSeek's lane is EXL3 3.5 bpw and resident at 56.6 GiB/rank against NVFP4's ~81. On a
-   273 GB/s part, bits per weight is the number that sets decode speed, and it is the one number no launcher
-   flag can change.
-2. **Higher draft acceptance on code and prose.** Ten draft tokens per step cost only ~66 ms against ~38 ms
-   for one, so drafting is cheap here; what limits code is that 5.1 of 8 draft tokens survive. A drafter
-   trained or tuned on code and prose would convert directly into tok/s, which no amount of `num_speculative_tokens`
-   will.
-3. **A native FP4 MoE path on SM121.** `flashinfer_b12x` is the only one, and it is excluded here solely
-   because it silently drops the `swiglu_limit=10.0` clamp this checkpoint declares. Validating it against
-   Marlin logprobs, rather than against a pass/fail quality gate, is the honest way in. It buys MMA
-   throughput, which matters at high concurrency, not at one stream.
+The slope is the routed experts, and it checks out independently: top-8 of 288 is 8/288 x 40.8 GiB/rank =
+1.134 GiB = **4.46 ms** predicted at 273 GB/s against 4.12 measured, correctly a little under because tokens in
+one verify batch share experts.
 
-## The NVFP4 attempt: four boots, and a bound worth more than the tuning
+The intercept was the finding. Summing the checkpoint by module class and dtype:
+
+| module class | GiB | dtype |
+|---|---|---|
+| routed experts | 163.27 | U8 145.12 + F8_E4M3 18.14 |
+| **attention** | **11.70** | **BF16** |
+| dense MLP | 3.52 | BF16 |
+| embeddings + head | 2.37 | BF16 |
+| other | 0.43 | BF16 |
+
+**18.01 GiB of non-expert weights, all bf16, read on every step** regardless of how many tokens are in flight:
+4.50 GiB/rank = **17.7 ms**, which accounts for the intercept and leaves 16.9 ms of genuine non-weight overhead
+(drafter forward, aux hidden-state extraction from 5 target layers, 45 layers of all-reduce, KV, kernel launch,
+host bubble). Quantizing 13.88 GiB of those is what the final build does, and the model's x1.179 prediction held.
+
+Speculation is not the lever. With no drafter at all **every category pins at 26.3 tok/s**. Measured acceptance
+at k=9, cumulative by draft position, is 74.9 / 53.7 / 40.1 / 31.5 / 26.0 / 21.6 / 18.2 / 14.9 / 12.5%, with
+conditional survival flat near 0.8 after the first position, so tokens per step is `1 + sum(cumulative)` and the
+tail is geometric: k=9 buys +7% tokens per step for 29% more verify work and 9% less KV. And **k=7 is not a tuned
+value** - the drafter's config says `block_size: 8`, so k=7 fills exactly one diffusion block and k=9 spills into
+a second.
+
+## What is left
+
+1. **Settle the long-context question.** Run the bf16 needle at 65K/98K/131K to establish whether the one dropped
+   digit at 131K depth 0.3 is a regression from NVFP4 or a pre-existing property of the lane. If it is a
+   regression, exclude `q_proj`/`k_proj` (1.06 GiB of the 13.88, about 0.8 ms of the 10.4 ms saved) since those
+   feed attention scores directly, and re-test.
+2. **The 16.9 ms of non-weight overhead is now the largest single unexplained term** in the step. Halving it would
+   be worth about another x1.15. It needs a per-step profile, not arithmetic.
+3. **Concurrency.** C3 aggregate is still DeepSeek's by 13%, and GLM flattens between C12 and C16. Whether the
+   NVFP4 build changes the concurrency curve was not measured; it should be.
+4. **Upstream the two lines.** `quant_config=None` in `glm5next/nvidia` is correct for a checkpoint whose
+   projections are bf16 and wrong for one whose are not. It should key off the checkpoint's own `ignore` list
+   rather than being hardcoded, which is what `is_layer_skipped()` already does correctly per layer.
+
+## The NVFP4 build: five boots, and what each failure taught
 
 Having found that 18.01 GiB of non-expert weights are bf16 and are read on every step, the obvious move was to
 quantize them. Four boots, none of which served, and the failures are the finding:
@@ -222,7 +271,8 @@ quantize them. Four boots, none of which served, and the failures are the findin
 | g16 | 13.88 GiB, 412 tensors, duplicates removed | `kda.py:114` | KDA loads `f_a`/`g_a` as **replicated** shards with `output_size *= tp_size` and `tp_rank` forced to 0; that does not line up with packed NVFP4 parameters |
 | g17 | 7.42 GiB, KDA group excluded | `model.py:917` `KeyError: o_proj.weight_scale` | **the model builds those projections with `quant_config=None`** |
 
-The last one is conclusive and is in the image's own source:
+g17's `KeyError` finally pointed at the constructor rather than the loader, and the cause is in the
+image's own source:
 
 ```
 kda.py:172     vllm_config.quant_config = None
@@ -230,22 +280,31 @@ model.py:331   quant_config=None,  # MLA projections are BF16 in checkpoint
 model.py:1090  quant_config=None,
 ```
 
-GLM-5.3-Flash's implementation hardcodes its attention projections as bf16. The checkpoint's `ignore` list was
-never the gate, so no repack can reach those weights. What it needs is a source change, and the value of making
-it is quantified: **x1.179 on every category**, which is code 89.8, JSON 80.0, math 87.7, prose 39.2, counting
-112.9 and structure 104.9 against DeepSeek's 90.7 / 75.8 / 87.5 / 39.0 / 113.0 / 98.6 - five of the six at or
-above it.
+GLM-5.3-Flash's implementation hardcodes its attention projections as bf16: KDA strips the quant config for its
+whole submodule tree, and the MLA path passes `quant_config=None` with a comment asserting the checkpoint is bf16
+there. So a packed NVFP4 `(out, in/2)` weight could never load into the resulting bf16 `(out, in)` parameter -
+which is the single cause of both g16 and g17, and which I misread as a KDA loader quirk for three boots.
 
-The conversion tooling is verified and reusable. `tools/mknvfp4b.py` quantizes in fused groups with one shared
-global scale per group and `weight_scale_2` as shape `(1,)`, which is what `PerTensorScaleParameter` and the
-`torch.unique(weight_scale_2).numel() != 1` check in `ModelOptNvFp4W4A16LinearMethod` require. Its format was
-validated **byte-for-byte against this checkpoint's own expert tensors** before any boot:
-`scaled_fp4_quant(w, 448*6/amax, is_sf_swizzled_layout=False)` reproduced the stored packed weights exactly and
-the stored fp8 block scales at 1.0000 identical, with `weight_scale_2 = amax/2688` matching to every digit. The
-swizzled layout matched only 12% of scale bytes, so that flag is not optional. `tools/build4.py` assembles a dir
-by hardlinking clean shards and rewriting only the ones that mix superseded tensors with tensors still needed,
-then verifies zero duplicate names, zero missing indexed names and zero index entries pointing at a file that
-lacks the tensor - the three checks whose absence cost the first two boots.
+**g18 fixed it with two bind-mounted lines**, using the same patch mechanism this lane already uses for
+`sparse_attn_indexer_kpool.py`:
+
+```
+kda.py:172    vllm_config.quant_config = None       -> removed
+model.py:331  quant_config=None                     -> quant_config=vllm_config.quant_config
+```
+
+Left alone on purpose, because they really are bf16 in every pack here and are in the checkpoint's `ignore` list:
+`model.py:1090` (vision tower - quantizing it yields NaN image features) and `attention.py:263` (indexer
+`wk_weights_proj`). `is_layer_skipped()` honours the ignore list per layer, so `indexer.*`, `f_b`/`g_b`,
+`q_a`/`kv_a` and `eh_proj` stayed bf16.
+
+It booted in 841 s, reported `quant_algo=W4A16_NVFP4` and `MarlinNvFp4LinearKernel`, loaded **43.76 GiB/rank**,
+kept the 3,895,606-token KV pool, and passed the quality gate 5/5. It is wired behind an opt-in `NVFP4_PATCH=1`
+so the default lane is unchanged, and the whole configuration is one line:
+
+```bash
+MODEL_DIR=keys-glm53-nvfp4-attn3 NVFP4_PATCH=1 MNBT=8192 SPEC_K=7 bash /root/glm_boot.sh <label>
+```
 
 One free win came out of it regardless: selecting `W4A16_NVFP4` instead of `NVFP4` picks
 `ModelOptNvFp4W4A16LinearMethod`, which needs no `input_scale` and therefore **disarms the W4A4 landmine**

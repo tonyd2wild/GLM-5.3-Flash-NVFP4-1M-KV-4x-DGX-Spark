@@ -741,3 +741,74 @@ checkpoint format, and not a launcher flag. The conversion tooling is verified b
 
 GLM-5.3-Flash TP4 therefore **did not beat DeepSeek-V4.1-Flash tonight** on any of CODE, JSON, PROSE, MATH,
 counting or structure. The fleet is back on DeepSeek.
+
+## 12:44 UTC - g18 SERVES, and five of the six named categories beat DeepSeek
+
+The blocker was two lines, and they were bind-mountable the whole time. Patched copies of the image's own
+`glm5next/nvidia/kda.py` and `model.py`, mounted read-only on all four nodes behind an opt-in `NVFP4_PATCH=1`:
+
+```
+kda.py:172    vllm_config.quant_config = None            -> removed (it stripped quant for the whole KDA tree)
+model.py:331  quant_config=None,  # MLA ... BF16          -> quant_config=vllm_config.quant_config,
+```
+
+Left alone deliberately, because they really are bf16 here and are in the checkpoint's `ignore` list:
+`model.py:1090` (vision tower; quantizing it yields NaN image features) and `attention.py:263` (indexer
+`wk_weights_proj`). `is_layer_skipped()` honours the ignore list per layer, so `indexer.*`, `f_b`/`g_b`,
+`q_a`/`kv_a` and `eh_proj` stayed bf16 as intended.
+
+Boot 841 s. `Detected ModelOpt NVFP4 checkpoint (quant_algo=W4A16_NVFP4)`, `Using MarlinNvFp4LinearKernel for
+NVFP4 GEMM`, **model weights 43.76 GiB/rank**, KV pool 3,895,606 tokens, graphs 45 s / 4.92 GiB.
+**Quality gate PASS 5/5.**
+
+### The measurement, medians of 2 passes (spread in brackets)
+
+| C1 per-stream tok/s | DeepSeek | GLM bf16 (2 boots) | **GLM NVFP4** | vs DeepSeek | vs GLM bf16 |
+|---|---|---|---|---|---|
+| code | 90.7 | 76.2 | 89.1 (1.08x) | -1.8% | +17% |
+| json | 75.8 | 67.9 | **77.5** (1.27x) | **+2.2%** | +14% |
+| math | 87.5 | 74.4 | **96.7** (1.02x) | **+10.5%** | +30% |
+| prose | 39.0 | 33.3 | **41.8** (1.02x) | **+7.2%** | +26% |
+| counting | 113.0 | 95.8 | **114.9** (1.02x) | **+1.7%** | +20% |
+| structure | 98.6 | 89.0 | **109.5** (1.13x) | **+11.1%** | +23% |
+| C1 aggregate | 61.3 | 53.6 | **62.5** | **+2.0%** | +17% |
+| C3 aggregate | 128.9 | 99.0 | 107.7 | -16% | +9% |
+
+**How strong each claim is:** math, prose and structure beat DeepSeek by more than their measured spread. json,
+counting and code are at parity within noise (+2.2%, +1.7%, -1.8% against spread up to 1.27x). C3 aggregate is
+still DeepSeek's by 16%, so this is a single-stream win, not a concurrency win.
+
+### The cost model was right
+
+Predicted: step 67.6 -> 57.2 ms, x1.179 on every category. Measured idle step 55-59 ms, and per-category gains of
+x1.14 to x1.30 (mean about x1.22, slightly better than predicted). The idle probe moved code 75.9-78.1 -> 97.7
+and counting 113.1-114.5 -> 138.0. Weights fell 2.6 GiB/rank short of arithmetic because `embed_tokens`,
+`lm_head`, the indexer, the router and the gates stayed bf16 on purpose.
+
+So the night's chain closes: 18.01 GiB of bf16 non-expert weights -> 17.7 ms of a 67.6 ms step -> quantize
+13.88 GiB of them -> five of six categories above DeepSeek. The prediction was made before the build existed and
+held.
+
+## 12:50 UTC - the needle catches what the quality gate could not
+
+Quantizing q/k/v/o is exactly the change that should degrade long-context retrieval before it degrades a
+short-prompt gate, so the needle was run for that reason:
+
+| needle | prompt tokens | prefill | result |
+|---|---|---|---|
+| 65K | 65,360 | 2,004 tok/s | **PASS**, exact: `COPPER-LANTERN-8315` |
+| 131K | 131,258 | 1,965 tok/s | **FAIL**: `COPPER-LANTERN-815` - one digit dropped - then the model began second-guessing itself in the output |
+
+**So this build is not safe to serve for long-context work on this evidence**, whatever the speed says. The
+5/5 quality gate passed it; a 131K retrieval did not. That is the same class of mistake this write-up warns about
+in the W4A4 section: a short gate cannot clear a numerics change.
+
+Two caveats in both directions. There is no bf16 GLM needle at 131K from tonight to compare against, so it is not
+yet established that this is a regression rather than a pre-existing limit of the lane (the repo's issue #14
+concerns long-context behaviour). And the failure is one character with visible self-correction, not a collapse.
+A bracket at 98K and a repeat at 131K with depth 0.6 are running to separate a length threshold from a
+depth artifact.
+
+What is safe to claim right now: **the speed result is real and measured, and the long-context quality of this
+build is an open question with one concrete failure against it.** It should not be served to anything doing
+100K-plus retrieval until that is resolved, and the resolution needs a bf16 baseline needle at the same lengths.

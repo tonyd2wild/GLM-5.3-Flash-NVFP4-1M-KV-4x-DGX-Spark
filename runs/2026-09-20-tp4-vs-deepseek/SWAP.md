@@ -40,6 +40,25 @@ curl -s -m 30 -X POST http://127.0.0.1:8000/v1/chat/completions -H 'Content-Type
 
 `/v1/models` returns 200 from the config even with a dead engine behind it, so it is not a liveness check.
 
+## To GLM-5.3-Flash with NVFP4 attention (the fast build, 4 of 6 categories above DeepSeek)
+
+```bash
+MODEL_DIR=keys-glm53-nvfp4-attn3 NVFP4_PATCH=1 MNBT=8192 SPEC_K=7 bash /root/glm_boot.sh glm-nvfp4
+```
+
+This is the same launcher with two extra knobs. `MODEL_DIR` points at the build whose 13.88 GiB of non-expert
+projections are NVFP4 (W4A16) instead of bf16, and `NVFP4_PATCH=1` bind-mounts two patched glm5next files that
+stop `quant_config` being forced to `None` for those projections - without it the build cannot load, because a
+packed `(out, in/2)` weight will not go into a bf16 `(out, in)` parameter. The patched files live at
+`$PATCH_HOME/patches/nvfp4/{kda.py,model.py}` on every node and the launcher refuses to start if they are
+missing.
+
+Measured against the bf16 build: structure +30%, math +29%, prose +27%, counting +21%, code +12%, JSON +5%,
+step time 67.6 -> 57 ms, weights 43.76 GiB/rank. Quality gate 5/5.
+
+**Caveat before serving it:** one of four needles dropped a digit at 131K depth 0.3 (65K, 98K and 131K depth 0.6
+were exact). Do not put this build on 100K-plus retrieval work until that is settled against a bf16 baseline.
+
 ## To DeepSeek-V4.1-Flash (500K context, EXL3 3.5 bpw + DSpark)
 
 ```bash

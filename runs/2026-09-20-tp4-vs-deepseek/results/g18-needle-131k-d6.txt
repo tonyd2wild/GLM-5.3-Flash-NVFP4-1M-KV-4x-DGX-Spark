@@ -1,0 +1,2 @@
+calibration: 3.520 prompt tokens per filler word
+{"target": 131072, "prompt_tokens": 131108, "depth": 0.6, "ttft_s": 49.4, "prefill_tok_s": 2653.1, "answer": "COPPER-LANTERN-8315", "pass": true}
