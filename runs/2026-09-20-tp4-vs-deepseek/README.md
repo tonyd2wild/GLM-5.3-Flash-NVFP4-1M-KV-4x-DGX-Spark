@@ -197,6 +197,16 @@ first baseline boot, inside a plus-or-minus 25% noise band. What did it was meas
 finding 17.7 ms of it in weights nobody had quantized, and then discovering the obstacle was two lines of the
 model implementation rather than anything about the checkpoint.
 
+**An interaction worth knowing before trusting this build:** the abliteration in this pack lives entirely in
+`layers.{15..45}.self_attn.o_proj.weight`, and `o_proj` is the largest single component of what the NVFP4 build
+quantizes (3.625 GiB of 13.88). So g18 stacks roughly 2-3% per-tensor quantization error on top of the very
+transplant that makes the checkpoint uncensored, across 31 of 45 layers. Two things follow. The alignment
+behaviour has **not** been re-tested on g18 - the quality gate covers counting, JSON, code, math and prose, none
+of which probe refusal - so it should not be assumed unchanged in either direction. And this is a more specific
+suspect for the 131K needle miss than "attention was quantized": those same layers already carry a 12.6%
+perturbation before quantization touches them. Excluding `o_proj` for layers 15-45 costs about 2.8 ms of the
+10.4 ms saved and is the cleanest way to separate the two effects.
+
 Serve-readiness: **not yet, for long-context work.** One of four needles dropped a digit at 131K depth 0.3 while
 65K, 98K and 131K depth 0.6 were exact. A 5/5 short-prompt gate cannot clear a numerics change, and this run has
 no bf16 needle at those lengths for comparison. The next session should run that baseline, and if the regression
@@ -340,8 +350,12 @@ token 'done'`). Harness edits belong between experiments, never during one.
 ## Credits
 
 - GLM-5.3-Flash by [zai-org](https://huggingface.co/zai-org/GLM-5.3-Flash); DFlash2 drafter by
-  [incoai](https://huggingface.co/incoai/GLM-5.3-Flash-DFlash2); the NVFP4 abliterated pack used here is the
-  keys build.
+  [incoai](https://huggingface.co/incoai/GLM-5.3-Flash-DFlash2).
+- The checkpoint served here is `keys-glm-5.3-flash-nvfp4-ablit-l15-45-anchorstock`, whose own `ABLIT_META.json`
+  records: method `dealign-oproj-transplant`, parent **LibertAIDAI/GLM-5.3-Flash-NVFP4**, donor
+  **dealignai/GLM-5.3-Flash-UNCENSORED-NVFP4**, 31 `layers.{15..45}.self_attn.o_proj.weight` tensors
+  transplanted (mean relative Frobenius 0.126), layers 0-14 left stock as a safety anchor, experts NVFP4
+  passthrough.
 - The TP4 recipe, patched image and `sparse_attn_indexer_kpool` SM121 fix are this repo's prior work; the RoCE
   and prefix-cache levers came from the 2026-09-18 TP2 night in the sibling repo.
 - b12x RoCEnante: @original-el8 and @lukealonso (local-inference-lab/b12x).

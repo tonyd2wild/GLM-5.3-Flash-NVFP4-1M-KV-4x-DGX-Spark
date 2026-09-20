@@ -812,3 +812,38 @@ depth artifact.
 What is safe to claim right now: **the speed result is real and measured, and the long-context quality of this
 build is an open question with one concrete failure against it.** It should not be served to anything doing
 100K-plus retrieval until that is resolved, and the resolution needs a bf16 baseline needle at the same lengths.
+
+## 13:05 UTC - the pack we served is abliterated, and the NVFP4 build quantized the tensors that do it
+
+Checking `ABLIT_META.json` in the served checkpoint (prompted by a question about a sibling build on the Hub):
+
+```
+method: dealign-oproj-transplant          style: safety-anchor-early + late-mtp-oproj
+parent: LibertAIDAI/GLM-5.3-Flash-NVFP4   donor: dealignai/GLM-5.3-Flash-UNCENSORED-NVFP4
+tensor: model.language_model.layers.{L}.self_attn.o_proj.weight   min_layer 15  max_layer 45
+n_edited: 31   edit_mtp: True   mean_rel_fro: 0.126   early_stock: [0, 14]   experts: NVFP4 passthrough
+```
+
+So every boot tonight, bf16 and NVFP4 alike, served an abliterated model. The abliteration is narrow: 31
+`o_proj` tensors transplanted from an uncensored donor, layers 0-14 deliberately stock as a safety anchor.
+
+**And `o_proj` is the biggest single thing the NVFP4 build quantizes** - 3.625 GiB of the 13.88 GiB. g18 therefore
+applies ~2-3% per-tensor quantization error on top of a transplant that already moved those tensors by 12.6%
+relative Frobenius, on 31 of 45 layers. Neither of those was designed with the other in mind.
+
+Consequences, neither of them addressed tonight:
+
+1. **Alignment behaviour on g18 is untested.** The quality gate covers counting, JSON, code, math and prose. None
+   of those probe refusal, so whether the abliteration survived quantization intact, was blunted, or was
+   amplified is simply unknown. It should not be assumed in either direction.
+2. **This is the most specific suspect for the 131K needle miss.** The needle failed at 131K depth 0.3 while 65K,
+   98K and 131K depth 0.6 were exact. Those transplanted layers are already 12.6% off their original weights
+   before NVFP4 adds its own error, and `o_proj` sits directly on the attention output path.
+
+Cheapest experiment to separate the two: rebuild excluding `o_proj` for layers 15-45. That gives up about 2.8 ms
+of the 10.4 ms saved (so roughly x1.13 instead of x1.18) and makes the NVFP4 change orthogonal to the
+abliteration. If the needle then passes at 131K depth 0.3, the interaction is confirmed.
+
+Also corrected in the write-up: the credits named "the keys build" generically and did not name the actual parent
+and donor. Note the sibling `drowzeys/keys-GLM-5.3-Flash-NVFP4-ablit-l15-43-mtp-l45` on the Hub is
+**RedHat-parented** with layers 15-43, so it is a different lineage from what we serve, not the same pack.
