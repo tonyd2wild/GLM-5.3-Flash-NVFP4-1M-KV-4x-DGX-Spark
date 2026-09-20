@@ -50,7 +50,7 @@ warm-up:
 | Draft acceptance | 0.394 at DFlash2 `k=7` |
 | Quality gate | **PASS** |
 | Cold prefill | **1,997 tok/s** (40,659 tokens, TTFT 20.4 s) on an idle lane |
-| Token corruption | **0 suspect characters in 28,617 generated** (see below) |
+| Token corruption | **0 suspect characters in 28,617 generated**; 0 in 15,248 on a second ModelOpt base (see below) |
 
 Against the previous LibertAI-based build, on the same harness and prompts: **7 of 9 C1 categories within
 measurement noise**, aggregate level at C1-C2 and ahead at C3-C6, and concurrency ahead at every level from
@@ -107,7 +107,25 @@ CJK, Cyrillic, Hangul, Arabic and replacement characters):
 |---|---|
 | run 1 (prose, code, JSON, tool-call, repetitive counting) | **0** in 13,121 |
 | run 2, quiet lane | **0** in 15,496 |
-| total | **0 in 28,617** |
+| total, nvidia base | **0 in 28,617** |
+
+Repeated on a **second, unrelated ModelOpt base** to check the fix generalises rather than being a property of
+nvidia's pack. The keys build (`LibertAIDAI` parent, the exact family this repo previously flagged) declaring
+`W4A16_NVFP4`:
+
+| lane | base | quant declared | suspect chars |
+|---|---|---|---|
+| nvidia default | `nvidia/GLM-5.3-Flash-NVFP4` (ModelOpt) | `W4A16_NVFP4` | **0 in 28,617** |
+| keys lane | `LibertAIDAI/GLM-5.3-Flash-NVFP4` (ModelOpt) | `W4A16_NVFP4` | **0 in 15,248** |
+
+**43,865 characters across two different ModelOpt bases, zero corruption.** Both are in the class measured at
+4 / 9 / 8 previously. The variable that distinguishes them is not the base or the producer, it is the declared
+algorithm: `W4A16_NVFP4` is weight-only and never reads the activation scales the corruption path depends on.
+
+That also means LibertAI's own fix, a separate 4.6 MB `model-input-scales.safetensors` added after their 27-Aug
+build, is **not needed on a W4A16 lane**. It supplies calibrated activation scales for a path these lanes do not
+execute. Switching to W4A4 to use it would additionally break any NVFP4 attention tensors added by this recipe,
+since those carry no activation scales of their own.
 
 **This is strong evidence, not proof.** An intermittent fault needs volume to rule out, and we have not run
 the direct contrast: a W4A4 lane on the same weights, measured the same way, which is what would turn a
