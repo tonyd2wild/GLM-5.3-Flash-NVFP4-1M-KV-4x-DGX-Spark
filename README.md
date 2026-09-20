@@ -50,7 +50,7 @@ warm-up:
 | Draft acceptance | 0.394 at DFlash2 `k=7` |
 | Quality gate | **PASS** |
 | Cold prefill | **1,997 tok/s** (40,659 tokens, TTFT 20.4 s) on an idle lane |
-| Token corruption | **0 suspect characters in 28,617 generated**; 0 in 15,248 on a second ModelOpt base (see below) |
+| Token corruption | **unresolved** - an earlier clean result was a false negative, see the retraction below |
 
 Against the previous LibertAI-based build, on the same harness and prompts: **7 of 9 C1 categories within
 measurement noise**, aggregate level at C1-C2 and ahead at C3-C6, and concurrency ahead at every level from
@@ -84,45 +84,70 @@ is directional, but it is not something to take on faith.
 
 ---
 
-## Token corruption (vLLM #54150): what we now think is going on
+## Token corruption (vLLM #54150): UNRESOLVED, and two of our explanations were wrong
 
-**Earlier revisions of this README made `RedHatAI/GLM-5.3-Flash-NVFP4` the default as a corruption
-workaround.** The measurement behind that still stands: ModelOpt-quantized NVFP4 builds scored 4 / 9 / 8
-corrupted token IDs across three passes where RedHat's `compressed-tensors` build scored 0 / 0 / 0
-([vLLM #54150](https://github.com/vllm-project/vllm/issues/54150)). Nearly invisible in English, but a
+**Status: open.** Corruption is real, reproduced by the operator in live agentic sessions, and **not explained**.
+This section records what is measured, what is ruled out, and the two claims this repo previously made that do
+not survive. Read it before trusting any lane here for agentic work.
+
+### What still stands
+
+NVIDIA's ModelOpt-quantized NVFP4 builds scored **4 / 9 / 8** corrupted token IDs across three passes where
+RedHat's `compressed-tensors` build scored **0 / 0 / 0** ([vLLM #54150](https://github.com/vllm-project/vllm/issues/54150)).
+That probe demonstrably detects the fault, because it found it. Nearly invisible in English prose, but a
 corrupted token inside a tool-call block desyncs the parser and generation can spiral into a repetition lock.
 
-What we had wrong was the boundary. The fault does not appear to be "ModelOpt builds", it appears to be the
-**W4A4 activation path** reading `input_scale` values that are absent or placeholders. A ModelOpt pack that
-declares `quant_algo` `NVFP4` gets a dynamic W4A4 activation key even when it ships no activation scales, and
-W4A4 kernels then multiply real weight scales by uninitialized memory. The source audit is in
-[`runs/2026-09-20-tp4-vs-deepseek/`](runs/2026-09-20-tp4-vs-deepseek/).
+### Retraction 1: `W4A16_NVFP4` is not a fix
 
-Both lanes here are **ModelOpt builds**, the class previously measured at 4 / 9 / 8, and both declare
-**`quant_algo: W4A16_NVFP4`**, which is weight-only and never reads activation scales. Measured with
-`tools/corrupt_probe.py` (English-only prompts at temperature 0, including a tool-call-shaped one, counting
-CJK, Cyrillic, Hangul, Arabic and replacement characters):
+An earlier revision claimed the fix was declaring `quant_algo: W4A16_NVFP4`, on the strength of
+`0 in 28,617` suspect characters from `tools/corrupt_probe.py`. **That is a false negative and the claim is
+withdrawn.** The probe counted only CJK, Cyrillic, Hangul, Arabic and replacement characters; a corrupted token
+ID can map to *any* vocabulary entry, including Latin-script words and structural tokens like `</tool_call>`.
+It also ran at temperature 0, single-turn, at 219-619 token contexts. It could not have found this bug.
 
-| | suspect characters |
+### Retraction 2: the W4A4 / missing-`input_scale` mechanism is wrong
+
+The stated mechanism was that a pack declaring `quant_algo: NVFP4` takes a W4A4 activation path and multiplies
+real weight scales by absent or placeholder `input_scale` values. **Checked directly against
+`nvidia/GLM-5.3-Flash-NVFP4` and it does not hold** - the activation scales are all present:
+
+| tensor class in the stock nvidia checkpoint | count |
 |---|---|
-| run 1 (prose, code, JSON, tool-call, repetitive counting) | **0** in 13,121 |
-| run 2, quiet lane | **0** in 15,496 |
-| total, nvidia base | **0 in 28,617** |
+| `*input_scale` | **36,297** |
+| `*weight_scale` | 36,297 |
+| `*weight_scale_2` | 36,297 |
+| total tensors | 147,661 |
 
-Repeated on a **second, unrelated ModelOpt base** to check the fix generalises rather than being a property of
-nvidia's pack. The keys build (`LibertAIDAI` parent, the exact family this repo previously flagged) declaring
-`W4A16_NVFP4`:
+One `input_scale` per quantized linear, exactly matching the weight-scale count. Nothing is missing, so
+`W4A16_NVFP4` is not "closing a corruption route" - it is a weight-only compatibility choice that ignores
+activation scales which genuinely exist. The mechanism is unknown.
 
-| lane | base | quant declared | suspect chars |
-|---|---|---|---|
-| nvidia default | `nvidia/GLM-5.3-Flash-NVFP4` (ModelOpt) | `W4A16_NVFP4` | **0 in 28,617** |
-| keys lane | `LibertAIDAI/GLM-5.3-Flash-NVFP4` (ModelOpt) | `W4A16_NVFP4` | **0 in 15,248** |
+### What is ruled out
 
-**43,865 characters across two different ModelOpt bases, zero corruption.** Both are in the class measured at
-4 / 9 / 8 previously. The variable that distinguishes them is not the base or the producer, it is the declared
-algorithm: `W4A16_NVFP4` is weight-only and never reads the activation scales the corruption path depends on.
+Each of these was a hypothesis that failed a measurement, listed so nobody re-runs them:
 
-That also means LibertAI's own fix, a separate 4.6 MB `model-input-scales.safetensors` added after their 27-Aug
+| hypothesis | test | result |
+|---|---|---|
+| Client/harness rendering artifact | two unrelated harnesses (dsh, OMP) on the same lane | **ruled out** - both corrupt identically |
+| Speculative-decode rejection sampler (temperature > 0 path) | same prompt at temperature 0.0 / 0.3 / 0.7 / 1.0 | **ruled out** - behaviour identical at 0 and 1.0 |
+| Context length alone | 12 accumulating turns, 33 KB system prompt, to 15.3 K context, non-streaming | **not reproduced** - 48 K characters clean |
+| Missing activation scales (above) | tensor census of the stock checkpoint | **ruled out** - 36,297 present |
+| The dealignai `o_proj` transplant | corruption predates the keys lane; `4 / 9 / 8` was measured on unmodified ModelOpt packs | **not the cause**, though not excluded as an aggravator |
+
+Not yet tested, in priority order: the **full tool-call round trip** (assistant `tool_calls` -> `role: tool`
+result -> next turn, streamed, which is what both harnesses do and what every probe above omitted); context far
+beyond 15 K; and **Lane A itself**, which has never been tested with an adequate probe and is therefore
+**unverified, not clean**.
+
+### Use an adequate detector
+
+`tools/corrupt_probe.py` and `tools/corrupt2.py` are kept only as a record of what not to do. A detector for
+this fault needs to score, on long multi-turn streamed sessions with real tool cycles: emoji runs, any
+foreign-script character in an English response, duplicated lines and repeated SSE deltas, literal tool-call
+markup arriving as content, reasoning text leaking into the content channel, and 8-gram diversity of the output
+tail (degenerate tails fall below ~0.40). Validated against a real corrupted transcript and silent on clean
+prose.
+
 build, is **not needed on a W4A16 lane**. It supplies calibrated activation scales for a path these lanes do not
 execute. Switching to W4A4 to use it would additionally break any NVFP4 attention tensors added by this recipe,
 since those carry no activation scales of their own.
