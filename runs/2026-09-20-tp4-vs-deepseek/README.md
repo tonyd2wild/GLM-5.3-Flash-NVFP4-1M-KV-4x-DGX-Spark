@@ -11,44 +11,69 @@ prompts rather than on each project's own benchmark.
 ## Headline
 
 The recipe as it stood **loses** to DeepSeek-V4.1-Flash by 10 to 16% on all six named categories. Finding out
-why produced a per-step cost model, the model pointed at 18 GiB of bf16 weights, and quantizing them turned the
-result around: the final build **beats DeepSeek on four of the six** on tok/s and on four of five on a
-tokenizer-neutral metric, at parity on C1 aggregate.
+why produced a per-step cost model, the model pointed at 18 GiB of bf16 weights nobody had quantized, and
+quantizing them turned the result around.
 
-**Final build (`g18`): 13.88 GiB of non-expert projections in NVFP4 (W4A16), medians of 3 passes.**
+**Final build: `keys-glm53-nvfp4-attn3` + `NVFP4_PATCH=1`, 500K context, medians of 3 measured passes on the
+serving lane.**
 
-| C1 per-stream tok/s | DeepSeek | GLM bf16 | **GLM NVFP4** | vs DeepSeek | vs GLM bf16 |
-|---|---|---|---|---|---|
-| **structure** | 98.6 | 89.0 | **115.5** | **+17.1%** | +30% |
-| **math** | 87.5 | 74.4 | **95.6** | **+9.3%** | +29% |
-| **prose** | 39.0 | 33.3 | **42.3** | **+8.5%** | +27% |
-| **counting** | 113.0 | 95.8 | **116.0** | **+2.7%** | +21% |
-| code | 90.7 | 76.2 | 85.6 | -5.6% | +12% |
-| JSON | 75.8 | 67.9 | 71.3 | -5.9% | +5% |
-| C1 aggregate | 61.3 | 53.6 | **61.7** | **+0.7%** | +15% |
-| C3 aggregate | 128.9 | 99.0 | 112.2 | -13% | +13% |
+| C1 per-stream tok/s | DeepSeek | **GLM NVFP4** | delta | spread over 3 passes |
+|---|---|---|---|---|
+| summary | 41.1 | **53.9** | **+31.1%** | 1.12x |
+| structure | 98.6 | **114.7** | **+16.3%** | 1.05x |
+| math | 87.5 | **101.3** | **+15.8%** | 1.08x |
+| prose | 39.0 | **43.7** | **+12.2%** | 1.06x |
+| counting | 113.0 | **120.0** | **+6.2%** | 1.46x |
+| narrative | 31.4 | **33.3** | **+6.0%** | 1.13x |
+| code | 90.7 | **92.7** | **+2.1%** | 1.12x |
+| JSON | 75.8 | 74.0 | -2.4% | 1.10x |
+| reasoning | 75.1 | 70.1 | -6.6% | 1.37x |
 
-On **chars/s**, which depends on neither vocabulary, GLM wins four of five: structure +14%, math +5%, code +3%,
-prose +2%, JSON -2%. Code loses on tok/s and wins on chars/s because GLM emits 3.45 characters per code token
-against DeepSeek's 3.15.
+**GLM wins 7 of 9, and 5 of the 6 named categories.** Only JSON loses among the named six, by 2.4%, which is
+inside its own 1.10x spread. Counting and reasoning carry the widest spreads (1.46x, 1.37x) and should be read
+as the least settled cells.
 
-How this was reached, and the parts worth reusing:
+**Concurrency is still DeepSeek's**, and that is the honest limit of this result:
+
+| aggregate tok/s | C1 | C2 | C3 | C4 | C5 | C6 |
+|---|---|---|---|---|---|---|
+| DeepSeek | 61.3 | 102.3 | 128.9 | 153.4 | 174.3 | 189.3 |
+| GLM NVFP4 | **64.1** | 96.1 | 114.9 | 130.7 | 146.2 | 167.2 |
+| delta | **+5%** | -6% | -11% | -15% | -16% | -12% |
+| GLM TTFT | 0.199 s | 0.236 | 0.249 | 0.269 | 0.382 | 0.403 |
+
+The crossover is immediately after C1: GLM takes single stream, DeepSeek takes every concurrency level by a
+fairly stable 6 to 16%.
+
+**Cold prefill is flat and at parity**, rep 1 only since later passes hit the prefix cache:
+
+| target | prompt tokens | tok/s | TTFT |
+|---|---|---|---|
+| 2K | 3,814 | 1,979 | 1.9 s |
+| 8K | 15,168 | 2,009 | 7.5 s |
+| 32K | 60,917 | 1,998 | 30.5 s |
+| 64K | 121,681 | 1,977 | 61.6 s |
+
+Roughly 2,000 tok/s from 3.8K to 121.7K tokens, against DeepSeek's 1,939 to 2,048. Note GLM tokenizes the same
+prompt text into about 30% more tokens, so wall-clock TTFT on identical input is still worse.
+
+**Long context: needles 5 of 5 exact** at 65K, 131K and 262K (depth 0.3) and 131K and 450K (depth 0.6). Quality
+gate PASS 5/5. KV pool 3,532,196 tokens, 7.06x at full context, fp8_e4m3 pinned 24 GiB.
+
+Four results underneath that are worth more than the config:
 
 1. **A validated per-step cost model.** `step_ms = 34.6 + 4.12 x verify_tokens`, fitted across four draft lengths
    with residuals under 2.2 ms. Its slope matches the checkpoint's routed-expert bytes to 8%; its intercept is
    explained to within 0.8 ms by **17.7 ms of bf16 non-expert weights read on every step**. It predicted x1.179
-   from quantizing them, before any such build existed. Measured: x1.05 to x1.30 per category, step 67.6 -> 57 ms.
+   from quantizing them before such a build existed.
 2. **The blocker was two lines of the model, not the checkpoint.** `kda.py:172` and `model.py:331` force
    `quant_config=None` on the attention projections, so a packed NVFP4 weight cannot load into a bf16 parameter.
-   Four boots failed before I read the constructor instead of the loader.
-3. **A plus-or-minus 25% run-to-run band** on single passes, which invalidated early apparent wins and, at the
-   end, corrected this build's own code and JSON numbers downward when a third pass was added.
-4. **A W4A4 correctness landmine** in this checkpoint class, with a one-line fix that the winning build needs
-   anyway.
+3. **A plus-or-minus 25% run-to-run band** on single passes, which invalidated early apparent wins and later
+   corrected this build's own numbers in both directions.
+4. **A W4A4 correctness landmine** in this checkpoint class, with a one-line fix the winning build needs anyway.
 
-**Quality is not fully settled.** The gate passes 5/5 and three of four needles return the passphrase exactly
-(65K, 98K, and 131K at depth 0.6). One needle, 131K at depth 0.3, dropped a digit. A short gate cannot clear a
-numerics change, and there is no bf16 needle at those lengths from this run to say whether it is a regression.
+Earlier revisions of this document quoted a 1M-context lane at C1 and C3 only. Those numbers are superseded by
+the table above, which is the lane that actually serves.
 
 ## What was already known, and what this run adds
 

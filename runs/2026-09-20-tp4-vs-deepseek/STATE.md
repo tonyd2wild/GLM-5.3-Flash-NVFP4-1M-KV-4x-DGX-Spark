@@ -891,3 +891,36 @@ down from ~67.5 ms on bf16, so the quantization gain is intact at the smaller wi
 **Recommendation on hold: stay at 500K.** It is the configuration with verified retrieval (5/5 up to 450K), it
 matches DeepSeek's window so the head-to-head is apples-to-apples, and it costs only capability above 500K that
 nothing has exercised. Going back to 1M should be gated on re-running the needles there first.
+
+## 15:55-16:11 UTC - full C1-C6 sweep on the serving 500K lane
+
+Everything quoted before this was measured on the 1M lane at C1 and C3 only. This is the lane that actually
+serves, three measured passes after a discarded warm-up, levels 1 through 6 with prefill at four targets.
+
+**C1 per-stream, medians of 3, against DeepSeek:** summary 53.9 vs 41.1 (+31.1%), structure 114.7 vs 98.6
+(+16.3%), math 101.3 vs 87.5 (+15.8%), prose 43.7 vs 39.0 (+12.2%), counting 120.0 vs 113.0 (+6.2%), narrative
+33.3 vs 31.4 (+6.0%), **code 92.7 vs 90.7 (+2.1%)**, JSON 74.0 vs 75.8 (-2.4%), reasoning 70.1 vs 75.1 (-6.6%).
+
+**7 of 9, and 5 of the six named.** Code crossed over on this lane, having measured -5.6% on the 1M lane. Both
+figures are 3-rep medians, so the difference is the lane, not the rep count. Spreads: structure 1.05x, prose
+1.06x, math 1.08x, JSON 1.10x, code 1.12x, summary 1.12x, narrative 1.13x, reasoning 1.37x, counting 1.46x. The
+JSON loss at -2.4% sits inside its own spread, so JSON is better described as parity than as a loss, and counting
+and reasoning are the least settled cells.
+
+**Aggregate by concurrency (GLM vs DeepSeek):** C1 64.1 vs 61.3 (+5%), C2 96.1 vs 102.3 (-6%), C3 114.9 vs 128.9
+(-11%), C4 130.7 vs 153.4 (-15%), C5 146.2 vs 174.3 (-16%), C6 167.2 vs 189.3 (-12%). TTFT 0.199 s at C1 rising
+to 0.403 s at C6, against DeepSeek's 0.205 and 0.381. **The crossover is immediately after C1.**
+
+**Cold prefill, rep 1 only:** 3,814 tok at 1,979 tok/s, 15,168 at 2,009, 60,917 at 1,998, 121,681 at 1,977. Flat
+to within 1.6% across a 32x range of prompt length, and level with DeepSeek's 1,939-2,048. This also closes the
+prefill question for good: the 1,485-1,647 seen during the needles was warmup and position variance, and the
+"20% slower at 500K" claim retracted earlier was indeed wrong.
+
+## Drift guard on the patch mount
+
+`NVFP4_PATCH=1` now verifies that the image's own `glm5next/nvidia/{kda.py,model.py}` still hash to the versions
+the patched copies were derived from (`2a20e453...`, `b6c8eb2d...`, image
+`sha256:35c6f70ffcba62fd67d7b9d4b4e8300ad177201792ce9cdb1ea18fd449bc23b6`) and refuses to boot otherwise.
+Without it, rebuilding the image would silently mount older copies over newer originals with no error and no
+symptom. Tested both ways: allows the current image, rejects a mismatched hash. Launcher redistributed, md5
+4d9e3563 on all four nodes.

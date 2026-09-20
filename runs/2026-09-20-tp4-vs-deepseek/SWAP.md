@@ -53,11 +53,15 @@ packed `(out, in/2)` weight will not go into a bf16 `(out, in)` parameter. The p
 `$PATCH_HOME/patches/nvfp4/{kda.py,model.py}` on every node and the launcher refuses to start if they are
 missing.
 
-Measured against the bf16 build: structure +30%, math +29%, prose +27%, counting +21%, code +12%, JSON +5%,
-step time 67.6 -> 57 ms, weights 43.76 GiB/rank. Quality gate 5/5.
+Measured at 500K, medians of 3: it beats DeepSeek on 7 of 9 categories (summary +31%, structure +16%, math
++16%, prose +12%, counting +6%, narrative +6%, code +2%) and loses JSON by 2% and reasoning by 7%. C1 aggregate
+64.1 vs 61.3. DeepSeek still wins C2 through C6 by 6 to 16%. Cold prefill flat near 2,000 tok/s to 121K tokens.
+Quality gate 5/5, needles 5/5 to 450K, weights 43.76 GiB/rank, step 67.6 -> 57 ms.
 
-**Caveat before serving it:** one of four needles dropped a digit at 131K depth 0.3 (65K, 98K and 131K depth 0.6
-were exact). Do not put this build on 100K-plus retrieval work until that is settled against a bf16 baseline.
+**The launcher verifies the image before mounting the patches.** `NVFP4_PATCH=1` checks that the image's own
+`glm5next` files still hash to what the patched copies were derived from (image
+`sha256:35c6f70f...`) and refuses to boot if they moved, because mounting stale copies over a rebuilt image
+would run old model code silently. Re-derive with `tools/mkpatch.py` and update the hashes if you rebuild.
 
 ## To DeepSeek-V4.1-Flash (500K context, EXL3 3.5 bpw + DSpark)
 

@@ -58,7 +58,25 @@ if [ -n "${NVFP4_PATCH:-}" ]; then
   for f in kda.py model.py; do
     test -f "$PATCH_HOME/patches/nvfp4/$f" || { echo "MISSING: \$PATCH_HOME/patches/nvfp4/$f -- NVFP4_PATCH=1 needs the patched glm5next files (they stop quant_config being forced to None for the attention projections). See runs/2026-09-20-tp4-vs-deepseek." >&2; exit 3; }
   done
-  echo "NVFP4_PATCH on: attention projections will be built from the checkpoint quant config"
+  # Drift guard. The patched files are edited COPIES of two files from one specific image. If the image is
+  # rebuilt, mounting them would silently override newer originals with older code, with no error. So verify the
+  # originals inside the image still hash to what the patches were derived from, and refuse if they moved.
+  NVFP4_BASE_KDA="2a20e4530e9cb38590104aeba50708c0"
+  NVFP4_BASE_MODEL="b6c8eb2d6a3e28339cda4e14deac874e"
+  _vd="/usr/local/lib/python3.12/dist-packages/vllm/models/glm5next/nvidia"
+  _got=$(docker run --rm --entrypoint sh "$IMAGE" -c "md5sum $_vd/kda.py $_vd/model.py" 2>/dev/null | awk '{print $1}' | tr '\n' ' ')
+  _want="$NVFP4_BASE_KDA $NVFP4_BASE_MODEL "
+  if [ "$_got" != "$_want" ]; then
+    echo "REFUSING: NVFP4_PATCH=1 but the image's glm5next files have changed." >&2
+    echo "  expected: $_want" >&2
+    echo "  found:    $_got" >&2
+    echo "  The patched copies in \$PATCH_HOME/patches/nvfp4 were derived from image" >&2
+    echo "  sha256:35c6f70ffcba62fd67d7b9d4b4e8300ad177201792ce9cdb1ea18fd449bc23b6. Mounting them over a" >&2
+    echo "  different build would silently run stale model code. Re-derive them with tools/mkpatch.py against" >&2
+    echo "  the new image, then update these hashes. See runs/2026-09-20-tp4-vs-deepseek." >&2
+    exit 3
+  fi
+  echo "NVFP4_PATCH on: attention projections will be built from the checkpoint quant config (image glm5next files verified unchanged)"
 fi
 test -f /var/tmp/models/GLM-5.3-Flash-DFlash2/config.json || { echo "MISSING drafter /var/tmp/models/GLM-5.3-Flash-DFlash2" >&2; exit 3; }
 mkdir -p "$CACHE_HOST_PATH"
