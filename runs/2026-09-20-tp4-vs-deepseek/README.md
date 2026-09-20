@@ -45,6 +45,25 @@ as the least settled cells.
 The crossover is immediately after C1: GLM takes single stream, DeepSeek takes every concurrency level by a
 fairly stable 6 to 16%.
 
+Beyond C6, where DeepSeek's lane cannot go at all (it serves `max-num-seqs` 16):
+
+| aggregate tok/s | C8 | C12 | C16 | C24 | C32 |
+|---|---|---|---|---|---|
+| GLM bf16 | 181.3 | 210.4 | 246.7 | 292.8 | 322.2 |
+| GLM NVFP4 | 193.9 | 230.9 | 253.7 | 293.2 | 320.7 |
+| gain from quantizing | +7% | +10% | +3% | 0% | 0% |
+
+**The NVFP4 gain decays with concurrency, and that is predicted by the cost model rather than a surprise.** The
+saving is a fixed 10.3 ms per step, but the step itself grows with concurrency because each added stream routes
+to its own top-8 of 288 experts and widens the union that has to be streamed. So the same 10.3 ms is 15% of a
+68 ms step at C1 and a rounding error at C32. Coding aggregate actually **regresses** at the top end, 383 vs 418
+at C24 and 405 vs 473 at C32, which is the Marlin tradeoff surfacing: fewer bytes moved wins while
+bandwidth-bound, but unpacking 4-bit weights costs MMA throughput once compute-bound.
+
+So this quantization is a single-stream and low-concurrency win. It does not change the concurrency picture
+against DeepSeek at all, and at C24 and above it is neutral to slightly negative. Measured draft acceptance on
+the shipping config is 0.389 at k=7, against 0.326 at k=9.
+
 **Cold prefill is flat and at parity**, rep 1 only since later passes hit the prefix cache:
 
 | target | prompt tokens | tok/s | TTFT |

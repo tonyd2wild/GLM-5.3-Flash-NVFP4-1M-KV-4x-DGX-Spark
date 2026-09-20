@@ -1,0 +1,7 @@
+=== hiconc glm-500k-sweep 16:11:30
+  rep 1 done 16:15:39
+  rep 2 done 16:19:41
+  C8: mean-of-medians 193.9 | ceili 380 forma 301 math 268 codin 231
+  C12: mean-of-medians 230.9 | ceili 478 math 336 forma 321 json 283
+  C16: mean-of-medians 253.7 | ceili 516 math 356 forma 344 json 321
+=== hiconc glm-500k-sweep done 16:19:41

@@ -1,0 +1,4 @@
+=== hiconc2 glm-500k-sweep 16:19:41
+  C24: mean agg 293.2 | ceili 639 (31.5/stream) math 388 (19.8/stream) codin 383 (20.5/stream) forma 375 (26.7/stream) json 350 (18.8/stream) reaso 284 (13.8/stream) summa 213 (11.8/stream) prose 191 (9.0/stream) narra 162 (7.6/stream)
+  C32: mean agg 320.7 | ceili 570 (22.1/stream) math 490 (18.6/stream) codin 405 (16.4/stream) forma 390 (21.1/stream) json 357 (15.3/stream) reaso 308 (11.5/stream) summa 225 (9.6/stream) prose 210 (7.6/stream) narra 181 (6.4/stream)
+=== hiconc2 glm-500k-sweep done 16:24:18
