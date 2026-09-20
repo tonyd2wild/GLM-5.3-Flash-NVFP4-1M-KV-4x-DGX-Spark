@@ -1,4 +1,5 @@
-FROM radixark/vllm-glm53-flash:sm121-fi618-nccl
+#FROM radixark/vllm-glm53-flash:sm121-fi618-nccl
+FROM radixark/vllm-glm53-flash:sm121-v4
 
 # The flashinfer 0.6.18 nightly also bumped nvidia-cutlass-dsl to a mixed 4.7.0/4.6.2
 # state, ICEing the CuTeDSL warmup (cute-to-nvvm). Restore the 4.6.2 family the image

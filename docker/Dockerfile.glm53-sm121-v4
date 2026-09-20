@@ -1,4 +1,5 @@
-FROM radixark/vllm-glm53-flash:sm121-fi618
+#FROM radixark/vllm-glm53-flash:sm121-fi618
+FROM radixark/vllm-glm53-flash:sm121-v3
 
 # flashinfer 0.6.18 nightly silently downgraded nvidia-nccl-cu13 2.30.7 -> 2.29.7,
 # which fails ncclCommInitRank with internal error on the Spark IB fabric.

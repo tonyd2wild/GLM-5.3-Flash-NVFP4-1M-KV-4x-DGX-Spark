@@ -1,4 +1,5 @@
-FROM radixark/vllm-glm53-flash:sm121-nope-mla
+#FROM radixark/vllm-glm53-flash:sm121-nope-mla
+FROM radixark/vllm-glm53-flash:sm121-v1
 
 # Debug build: env-gated NaN localizer. With GLM53_NAN_DEBUG=1, installs a
 # forward hook on every submodule of Glm5NextModel that logs the first module

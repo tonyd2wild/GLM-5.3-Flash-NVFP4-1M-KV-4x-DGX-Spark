@@ -1,4 +1,5 @@
-FROM radixark/vllm-glm53-flash:sm121-final
+#FROM radixark/vllm-glm53-flash:sm121-final
+FROM radixark/vllm-glm53-flash:sm121-v5
 
 # PDL (Programmatic Dependent Launch) is enabled for any capability >= 9,
 # including SM121, in the Triton kernels that carry KDA recurrent state
