@@ -128,7 +128,7 @@ The repo's own earlier finding was that ModelOpt-quantized NVFP4 builds emit int
 (4 / 9 / 8 in a prior test) while RedHat's compressed-tensors build scored 0 / 0 / 0, and that is why RedHat had
 been the default.
 
-**Both lanes here are ModelOpt builds and score zero.** `tools/corrupt_probe.py` sends English-only prompts at
+**RETRACTED - the probe below is a false negative; see the retraction note after the tables.** Both lanes here are ModelOpt builds and scored zero on it: `tools/corrupt_probe.py` sends English-only prompts at
 temperature 0, including a tool-call-shaped one, and counts CJK, Cyrillic, Hangul, Arabic and replacement
 characters:
 
@@ -171,7 +171,7 @@ measures identically.
 | draft acceptance | 0.394 vs 0.396, identical |
 | cold prefill | 1,997 tok/s, inside the baseline's 1,977-2,009 |
 | quality gate | PASS on both |
-| token corruption | 0 in 28,617 characters |
+| token corruption | **not measured** - the `0 in 28,617` figure this row used to cite is a withdrawn false negative (see the retraction note) |
 
 The predicted 3-5% penalty from nvidia's extra BF16 expert layer is real arithmetic but **not visible above the
 noise floor**, and the concurrency gain runs the other way.

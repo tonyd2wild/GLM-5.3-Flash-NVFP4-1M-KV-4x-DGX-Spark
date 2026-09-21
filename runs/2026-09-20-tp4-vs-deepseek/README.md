@@ -156,9 +156,15 @@ Our `flashinfer_cutlass` boot died in engine init, which was the lucky outcome: 
 served *plausible* text from corrupted weight scales, and a quality gate checking counting, JSON, arithmetic,
 code and prose can pass that. **`flashinfer_cutlass` and `vllm_cutlass` are excluded on correctness.**
 
-Free hardening for anyone running a ModelOpt GLM-5.3 pack: set `"quant_algo": "W4A16_NVFP4"` in its
-`config.json`. Zero speed effect; makes it impossible for any W4A4 kernel to be selected against weights that
-have no activation scales.
+Free hardening for a ModelOpt GLM-5.3 pack **that ships no activation scales**: set
+`"quant_algo": "W4A16_NVFP4"` in its `config.json`. Zero speed effect; makes it impossible for any W4A4 kernel
+to be selected against weights that have none. `Blackfrost-AI/GLM-5.3-Flash-DERISKED-NVFP4` is exactly this
+case — it declares `NVFP4` with zero `input_scale` tensors.
+
+> **Scope, so this is not misread:** this is about a pack with *missing* scales. It is **not** an explanation of
+> the token corruption seen in live use, and it is **not** a fix for it. `nvidia/GLM-5.3-Flash-NVFP4` ships all
+> 36,297 `input_scale` tensors, so that mechanism never applied to it; the earlier claim that `W4A16_NVFP4`
+> closed the corruption route is withdrawn. See the root README's appendix.
 
 Also established: `FLASHINFER_TRTLLM` and `FLASHINFER_CUTEDSL` are hard-excluded on SM121 by
 `is_device_capability_family(100)`; `swiglu_limit=10.0` in the config filters the candidate list to the

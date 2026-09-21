@@ -52,7 +52,7 @@ warm-up:
 | Draft acceptance | 0.394 at DFlash2 `k=7` |
 | Quality gate | **PASS** |
 | Cold prefill | **1,997 tok/s** (40,659 tokens, TTFT 20.4 s) on an idle lane |
-| Token corruption | **not seen on this lane or the Blackfrost lane** in operator use; it tracked the retired `o_proj` transplant. Mechanism still unmeasured - see the corruption section |
+| Token corruption | **not seen on this lane or the Blackfrost lane** in operator use; it tracked the retired `o_proj` transplant. Mechanism still unmeasured - see the appendix |
 
 Against the previous LibertAI-based build, on the same harness and prompts: **7 of 9 C1 categories within
 measurement noise**, aggregate level at C1-C2 and ahead at C3-C6, and concurrency ahead at every level from
@@ -99,123 +99,13 @@ quantization-noise floor of 0.000 on untouched classes) and does not have the pr
 ### Read these two before deploying
 
 - **[`runs/2026-09-20-nvidia-lanes/`](runs/2026-09-20-nvidia-lanes/)**: this build. Both lanes measured
-  side by side, the corruption probe, the checksums, the two porting traps, and
+  side by side, the checksums, the two porting traps, and
   **[`RUNBOOK.md`](runs/2026-09-20-nvidia-lanes/RUNBOOK.md)** with every command and value used, in order.
 - **[`runs/2026-09-20-tp4-vs-deepseek/`](runs/2026-09-20-tp4-vs-deepseek/)**: where the NVFP4 attention work
   came from, measured head to head against DeepSeek-V4.1-Flash on DeepSeek's own prompt set, plus the per-step
   cost model that predicted the gain and the W4A4 correctness audit.
 
 ---
-
-## Token corruption (vLLM #54150): UNRESOLVED, and two of our explanations were wrong
-
-**Status: open.** Corruption is real, reproduced by the operator in live agentic sessions, and **not explained**.
-This section records what is measured, what is ruled out, and the two claims this repo previously made that do
-not survive. Read it before trusting any lane here for agentic work.
-
-### What still stands
-
-NVIDIA's ModelOpt-quantized NVFP4 builds scored **4 / 9 / 8** corrupted token IDs across three passes where
-RedHat's `compressed-tensors` build scored **0 / 0 / 0** ([vLLM #54150](https://github.com/vllm-project/vllm/issues/54150)).
-That probe demonstrably detects the fault, because it found it. Nearly invisible in English prose, but a
-corrupted token inside a tool-call block desyncs the parser and generation can spiral into a repetition lock.
-
-### Retraction 1: `W4A16_NVFP4` is not a fix
-
-An earlier revision claimed the fix was declaring `quant_algo: W4A16_NVFP4`, on the strength of
-`0 in 28,617` suspect characters from `tools/corrupt_probe.py`. **That is a false negative and the claim is
-withdrawn.** The probe counted only CJK, Cyrillic, Hangul, Arabic and replacement characters; a corrupted token
-ID can map to *any* vocabulary entry, including Latin-script words and structural tokens like `</tool_call>`.
-It also ran at temperature 0, single-turn, at 219-619 token contexts. It could not have found this bug.
-
-### Retraction 2: the W4A4 / missing-`input_scale` mechanism is wrong
-
-The stated mechanism was that a pack declaring `quant_algo: NVFP4` takes a W4A4 activation path and multiplies
-real weight scales by absent or placeholder `input_scale` values. **Checked directly against
-`nvidia/GLM-5.3-Flash-NVFP4` and it does not hold** - the activation scales are all present:
-
-| tensor class in the stock nvidia checkpoint | count |
-|---|---|
-| `*input_scale` | **36,297** |
-| `*weight_scale` | 36,297 |
-| `*weight_scale_2` | 36,297 |
-| total tensors | 147,661 |
-
-One `input_scale` per quantized linear, exactly matching the weight-scale count. Nothing is missing, so
-`W4A16_NVFP4` is not "closing a corruption route" - it is a weight-only compatibility choice that ignores
-activation scales which genuinely exist. The mechanism is unknown.
-
-### What is ruled out
-
-Each of these was a hypothesis that failed a measurement, listed so nobody re-runs them:
-
-| hypothesis | test | result |
-|---|---|---|
-| Client/harness rendering artifact | two unrelated harnesses (dsh, OMP) on the same lane | **ruled out** - both corrupt identically |
-| Speculative-decode rejection sampler (temperature > 0 path) | same prompt at temperature 0.0 / 0.3 / 0.7 / 1.0 | **ruled out** - behaviour identical at 0 and 1.0 |
-| Context length alone | 12 accumulating turns, 33 KB system prompt, to 15.3 K context, non-streaming | **not reproduced** - 48 K characters clean |
-| Missing activation scales (above) | tensor census of the stock checkpoint | **ruled out** - 36,297 present |
-| The dealignai `o_proj` transplant | operator side-by-side: the transplant lane garbles in two unrelated harnesses, the censored nvidia lane and the Blackfrost lane do not; acceptance 0.224 on the transplant vs 0.394 / 0.415 | **leading cause** (see the resolution note below). An earlier revision of this table said "not the cause" on the grounds that `4 / 9 / 8` was measured on unmodified packs — that reasoning is withdrawn |
-
-Not yet tested, in priority order: the **full tool-call round trip** (assistant `tool_calls` -> `role: tool`
-result -> next turn, streamed, which is what both harnesses do and what every probe above omitted); context far
-beyond 15 K. **Both current lanes have since been exercised by the operator** in the harness that garbled on
-the retired transplant lane, and neither reproduced it.
-
-### Resolution note (2026-09-21): the transplant lane, not the quantizer
-
-Two operator tests settled the practical question even though the mechanism is still unmeasured. The censored
-`nvidia` lane and the `Blackfrost` lane are both **ModelOpt** builds and both behave correctly in the harness
-that garbled; the retired dealignai `o_proj` transplant garbled in **two unrelated harnesses**. So ModelOpt as a
-class is not the trigger, and the earlier plan to move back to RedHat `compressed-tensors` is unnecessary.
-
-A second, independent signal agrees. DFlash2 was trained against stock GLM-5.3-Flash, so draft acceptance
-measures how far a target has drifted from stock:
-
-| lane | acceptance | tokens/step | position 7 |
-|---|---|---|---|
-| dealignai `o_proj` transplant (retired) | **0.224** | **2.57** | **0.000** |
-| nvidia (censored default) | 0.394 | 3.76 | healthy |
-| Blackfrost (uncensored default) | **0.415** | **3.90** | healthy |
-
-**This remains inferential.** Seven probes failed to reproduce the garbling directly: two harnesses corrupt
-identically (not a client artifact), temperature 0 behaves like temperature 1.0 (not the spec-decode rejection
-sampler), 48K characters over 12 turns to 15.3K context stayed clean, full streamed tool-call round trips stayed
-clean, and the `input_scale` explanation was wrong (nvidia ships all 36,297). What is established is which lanes
-are safe to run, not the mechanism inside the broken one.
-
-### Use an adequate detector
-
-`tools/corrupt_probe.py` and `tools/corrupt2.py` are kept only as a record of what not to do. A detector for
-this fault needs to score, on long multi-turn streamed sessions with real tool cycles: emoji runs, any
-foreign-script character in an English response, duplicated lines and repeated SSE deltas, literal tool-call
-markup arriving as content, reasoning text leaking into the content channel, and 8-gram diversity of the output
-tail (degenerate tails fall below ~0.40). Validated against a real corrupted transcript and silent on clean
-prose.
-
-build, is **not needed on a W4A16 lane**. It supplies calibrated activation scales for a path these lanes do not
-execute. Switching to W4A4 to use it would additionally break any NVFP4 attention tensors added by this recipe,
-since those carry no activation scales of their own.
-
-**This is strong evidence, not proof.** An intermittent fault needs volume to rule out, and we have not run
-the direct contrast: a W4A4 lane on the same weights, measured the same way, which is what would turn a
-correlation into a demonstrated mechanism. Neither has been done. So the honest statement is *ModelOpt packs
-corrupt on the W4A4 path, and forcing `W4A16_NVFP4` avoids that path*, not *the corruption was imaginary*.
-
-The practical consequence: **RedHat is no longer needed as the workaround**, and the same config line that
-makes the quantized attention weights loadable is the one that closes the corruption route. Free hardening for
-anyone running any ModelOpt GLM-5.3 pack: set `"quant_algo": "W4A16_NVFP4"` in its `config.json`. No speed
-effect, and it makes a W4A4 kernel impossible to select against weights with no activation scales.
-
-Corruption first flagged by [@ajclark](https://github.com/ajclark) (issue #10).
-
----
-
-> **Second site, 100G switched fabric:** [docs/FIELD-NOTES-4NODE-100G.md](docs/FIELD-NOTES-4NODE-100G.md)
-> reproduces this recipe on four GX10 through an Arista 7060CX-32S at 100G. Decode matched
-> the 200G numbers, which suggests it is not fabric-bound. Also covers a GID-index lookup
-> for the launcher, why AOC transceivers overheat in the GX10 cages, and moving 185 GB
-> between nodes without encrypting it.
 
 ## The 1M-context fp8/marlin configuration (measured 2026-08-31 to 09-02)
 
@@ -601,7 +491,7 @@ The density win above is **not free** — we ran both lanes back-to-back on the 
 ## What's in here
 
 - [`runs/2026-09-20-nvidia-lanes/`](runs/2026-09-20-nvidia-lanes/): **the current default lane.** Both
-  weight lanes measured side by side, the corruption probe, per-file checksums, the patched `kda.py` and
+  weight lanes measured side by side, per-file checksums, the patched `kda.py` and
   `model.py` that `NVFP4_PATCH=1` mounts, a self-contained `tools/` including the launcher and harness,
   and [`RUNBOOK.md`](runs/2026-09-20-nvidia-lanes/RUNBOOK.md) with every command and value in order.
 - [`runs/2026-09-20-tp4-vs-deepseek/`](runs/2026-09-20-tp4-vs-deepseek/): where the NVFP4 attention work
@@ -644,6 +534,112 @@ The density win above is **not free** — we ran both lanes back-to-back on the 
 
 ---
 
+## Appendix: token corruption on the retired transplant lane (vLLM #54150)
+
+> **This does not affect either shipping lane.** Both the censored `nvidia` lane and the uncensored
+> `Blackfrost` lane have been exercised by the operator in the same harness that garbled, and neither
+> reproduced it. Corruption tracked the **retired** dealignai `o_proj` transplant, which is no longer a lane
+> here. You do not need to read this to deploy.
+
+Kept because the bug was real, the history matters, and this repo published two explanations that turned out to
+be wrong. If you are building your own abliterated pack, the Resolution note below is the part worth your time.
+
+### What still stands
+
+NVIDIA's ModelOpt-quantized NVFP4 builds scored **4 / 9 / 8** corrupted token IDs across three passes where
+RedHat's `compressed-tensors` build scored **0 / 0 / 0** ([vLLM #54150](https://github.com/vllm-project/vllm/issues/54150)).
+That probe demonstrably detects the fault, because it found it. Nearly invisible in English prose, but a
+corrupted token inside a tool-call block desyncs the parser and generation can spiral into a repetition lock.
+
+### Retraction 1: `W4A16_NVFP4` is not a fix
+
+An earlier revision claimed the fix was declaring `quant_algo: W4A16_NVFP4`, on the strength of
+`0 in 28,617` suspect characters from `tools/corrupt_probe.py`. **That is a false negative and the claim is
+withdrawn.** The probe counted only CJK, Cyrillic, Hangul, Arabic and replacement characters; a corrupted token
+ID can map to *any* vocabulary entry, including Latin-script words and structural tokens like `</tool_call>`.
+It also ran at temperature 0, single-turn, at 219-619 token contexts. It could not have found this bug.
+
+### Retraction 2: the W4A4 / missing-`input_scale` mechanism is wrong
+
+The stated mechanism was that a pack declaring `quant_algo: NVFP4` takes a W4A4 activation path and multiplies
+real weight scales by absent or placeholder `input_scale` values. **Checked directly against
+`nvidia/GLM-5.3-Flash-NVFP4` and it does not hold** - the activation scales are all present:
+
+| tensor class in the stock nvidia checkpoint | count |
+|---|---|
+| `*input_scale` | **36,297** |
+| `*weight_scale` | 36,297 |
+| `*weight_scale_2` | 36,297 |
+| total tensors | 147,661 |
+
+One `input_scale` per quantized linear, exactly matching the weight-scale count. Nothing is missing, so
+`W4A16_NVFP4` is not "closing a corruption route" - it is a weight-only compatibility choice that ignores
+activation scales which genuinely exist. The mechanism is unknown.
+
+### What is ruled out
+
+Each of these was a hypothesis that failed a measurement, listed so nobody re-runs them:
+
+| hypothesis | test | result |
+|---|---|---|
+| Client/harness rendering artifact | two unrelated harnesses (dsh, OMP) on the same lane | **ruled out** - both corrupt identically |
+| Speculative-decode rejection sampler (temperature > 0 path) | same prompt at temperature 0.0 / 0.3 / 0.7 / 1.0 | **ruled out** - behaviour identical at 0 and 1.0 |
+| Context length alone | 12 accumulating turns, 33 KB system prompt, to 15.3 K context, non-streaming | **not reproduced** - 48 K characters clean |
+| Missing activation scales (above) | tensor census of the stock checkpoint | **ruled out** - 36,297 present |
+| The dealignai `o_proj` transplant | operator side-by-side: the transplant lane garbles in two unrelated harnesses, the censored nvidia lane and the Blackfrost lane do not; acceptance 0.224 on the transplant vs 0.394 / 0.415 | **leading cause** (see the resolution note below). An earlier revision of this table said "not the cause" on the grounds that `4 / 9 / 8` was measured on unmodified packs — that reasoning is withdrawn |
+
+Not yet tested, in priority order: the **full tool-call round trip** (assistant `tool_calls` -> `role: tool`
+result -> next turn, streamed, which is what both harnesses do and what every probe above omitted); context far
+beyond 15 K. **Both current lanes have since been exercised by the operator** in the harness that garbled on
+the retired transplant lane, and neither reproduced it.
+
+### Resolution note (2026-09-21): the transplant lane, not the quantizer
+
+Two operator tests settled the practical question even though the mechanism is still unmeasured. The censored
+`nvidia` lane and the `Blackfrost` lane are both **ModelOpt** builds and both behave correctly in the harness
+that garbled; the retired dealignai `o_proj` transplant garbled in **two unrelated harnesses**. So ModelOpt as a
+class is not the trigger, and the earlier plan to move back to RedHat `compressed-tensors` is unnecessary.
+
+A second, independent signal agrees. DFlash2 was trained against stock GLM-5.3-Flash, so draft acceptance
+measures how far a target has drifted from stock:
+
+| lane | acceptance | tokens/step | position 7 |
+|---|---|---|---|
+| dealignai `o_proj` transplant (retired) | **0.224** | **2.57** | **0.000** |
+| nvidia (censored default) | 0.394 | 3.76 | healthy |
+| Blackfrost (uncensored default) | **0.415** | **3.90** | healthy |
+
+**This remains inferential.** Seven probes failed to reproduce the garbling directly: two harnesses corrupt
+identically (not a client artifact), temperature 0 behaves like temperature 1.0 (not the spec-decode rejection
+sampler), 48K characters over 12 turns to 15.3K context stayed clean, full streamed tool-call round trips stayed
+clean, and the `input_scale` explanation was wrong (nvidia ships all 36,297). What is established is which lanes
+are safe to run, not the mechanism inside the broken one.
+
+### Use an adequate detector
+
+`tools/corrupt_probe.py` and `tools/corrupt2.py` are kept only as a record of what not to do. A detector for
+this fault needs to score, on long multi-turn streamed sessions with real tool cycles: emoji runs, any
+foreign-script character in an English response, duplicated lines and repeated SSE deltas, literal tool-call
+markup arriving as content, reasoning text leaking into the content channel, and 8-gram diversity of the output
+tail (degenerate tails fall below ~0.40). Validated against a real corrupted transcript and silent on clean
+prose.
+
+build, is **not needed on a W4A16 lane**. It supplies calibrated activation scales for a path these lanes do
+not execute. Switching to W4A4 to use it would additionally break any NVFP4 attention tensors added by this
+recipe, since those carry no activation scales of their own.
+
+Corruption first flagged by [@ajclark](https://github.com/ajclark) (issue #10).
+
+---
+
+> **Second site, 100G switched fabric:** [docs/FIELD-NOTES-4NODE-100G.md](docs/FIELD-NOTES-4NODE-100G.md)
+> reproduces this recipe on four GX10 through an Arista 7060CX-32S at 100G. Decode matched
+> the 200G numbers, which suggests it is not fabric-bound. Also covers a GID-index lookup
+> for the launcher, why AOC transceivers overheat in the GX10 cages, and moving 185 GB
+> between nodes without encrypting it.
+
+---
+
 ## Superseded configurations
 
 Kept for the record. **Do not deploy these** — the current config is at the top.
@@ -654,7 +650,7 @@ Kept for the record. **Do not deploy these** — the current config is at the to
 | 2026-08-27 | 32 GiB/rank | 5,033,164 | passed a single-prefill gate, died under three concurrent requests |
 | 2026-08-27 | 38 GiB/rank | 5,975,779 | allocates and boots, then the first 20K prefill NVRM-OOMs a rank |
 | earlier | TP4 with MTP-4 (no DFlash2) | — | DFlash2 is faster at zero KV cost |
-| 2026-08-29 | `RedHatAI/GLM-5.3-Flash-NVFP4` as the default checkpoint | n/a | adopted as a token-corruption workaround; the nvidia lane measures 0 corruption in 28,617 characters at `W4A16_NVFP4` and is level-or-ahead on throughput. RedHat is still a fine alternative, it is just no longer the default |
+| 2026-08-29 | `RedHatAI/GLM-5.3-Flash-NVFP4` as the default checkpoint | n/a | adopted as a token-corruption workaround; the nvidia lane is level-or-ahead on throughput and has not shown corruption in operator use. (An earlier entry here cited "0 corruption in 28,617 characters" — that was a false negative from an inadequate probe and is withdrawn.) RedHat is still a fine alternative, it is just no longer the default |
 | 2026-09-20 | `keys-glm53-nvfp4-attn3` (LibertAI-parented, NVFP4 attention) | 3,532,196 | same recipe on the nvidia pack, which is MIT, ungated, and ships calibrated `input_scale` tensors |
 
 The 38 GiB case is the cautionary one: it allocates cleanly, boots, and answers short prompts
