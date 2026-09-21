@@ -527,10 +527,13 @@ The density win above is **not free** — we ran both lanes back-to-back on the 
   bisect harness, kernel-vs-torch A/B, and the benchmark script. **`gb10_alloc_probe.py`
   allocates all available memory to map the allocation wall — maintenance window only, never
   on a node that is serving.**
-- [`fleet_watchdog.sh`](fleet_watchdog.sh) — systemd-friendly self-healing: probes `/health`,
-  and on 3 consecutive failures tears down all ranks, runs the memory ritual, starts the
-  unconditional flusher, and relaunches workers-first. Recovery is ~15 min, so tune the
-  threshold before pointing it at a busy endpoint.
+- [`fleet_watchdog.sh`](fleet_watchdog.sh) — systemd-friendly self-healing: checks every
+  rank's container, probes `/health`, and sends a one-token canary; on 3 consecutive failures
+  tears down all ranks, runs the memory ritual, starts the unconditional flusher, and
+  relaunches workers-first. It gives up after 3 failed relaunches in a row
+  (`~/.fleet_watchdog.gaveup`) and pauses while `~/.fleet_watchdog.pause` exists. Recovery is
+  ~15 min, so tune the threshold before pointing it at a busy endpoint. `/health` alone misses
+  a dead worker: the head keeps answering 200 while it waits in a collective.
 
 ---
 
