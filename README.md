@@ -71,8 +71,9 @@ pool, same knobs — the weights are the only difference, which is what makes th
 
 Uncensored behaviour and long-session coherence are both **operator-confirmed**, in the same harness that
 garbled on the retired transplant lane. It measures at or above the censored lane on almost every cell:
-code 95.8 vs 78.7, counting 138.1 vs 107.7, prose 50.8 vs 40.8, C3 aggregate 125.0 vs 117.0, and **acceptance
-0.415 / 3.90 tok/step against 0.394 / 3.76**. Math is the one category below (83.3 vs 88.8, about −6%, at the
+code 95.9 vs 78.7 (medians; Lane A's code cell is bimodal at 78.7/92.0/78.7, so the fair statement is that
+**every Blackfrost rep beats every Lane A rep**, spread 1.01x vs 1.17x), counting 138.1 vs 107.7, prose 50.8 vs
+40.8, C3 aggregate 125.0 vs 117.0, and **acceptance 0.415 / 3.90 tok/step against 0.394 / 3.76**. Math is the one category below (83.3 vs 88.8, about −6%, at the
 edge of its spread). Full tables, spreads and caveats:
 [`runs/2026-09-21-blackfrost-derisked/`](runs/2026-09-21-blackfrost-derisked/).
 

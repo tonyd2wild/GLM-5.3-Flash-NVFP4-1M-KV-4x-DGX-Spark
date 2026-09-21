@@ -78,6 +78,17 @@ that looks exactly like the corruption this repo spent a night chasing.**
 
 **Math is the one category below Lane A** (−6%, at the edge of the measured spread). Everything else ties or wins.
 
+**On code, read the per-rep values, not the medians.** Lane A's code cell is bimodal and its spread is 1.17x:
+
+| | rep 1 | rep 2 | rep 3 | median | spread |
+|---|---|---|---|---|---|
+| Lane A | 78.72 | **92.04** | 78.68 | 78.7 | 1.17x |
+| Blackfrost | 95.85 | 95.89 | 94.62 | **95.9** | **1.01x** |
+
+A median-to-median reading (95.9 vs 78.7) leans on Lane A's two low reps and overstates the typical gap. The
+claim that does not depend on that choice is the paired one: **Blackfrost's worst rep beats Lane A's best rep**,
+and its spread is 1.01x against 1.17x — faster on code and far more consistent.
+
 ### Aggregate and TTFT
 
 | level | Lane A | Blackfrost |
