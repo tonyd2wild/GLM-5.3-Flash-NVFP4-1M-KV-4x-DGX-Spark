@@ -1,0 +1,4 @@
+=== hiconc2 blackfrost-derisked-bench 00:15:33
+  C24: mean agg 326.2 | ceili 777 (36.5/stream) codin 460 (23.1/stream) forma 421 (27.9/stream) math 400 (20.8/stream) json 386 (20.4/stream) reaso 298 (14.8/stream) summa 233 (15.1/stream) prose 222 (10.4/stream) narra 189 (8.7/stream)
+  C32: mean agg 351.9 | ceili 832 (29.3/stream) forma 502 (22.3/stream) codin 444 (17.5/stream) math 430 (17.0/stream) json 381 (15.6/stream) reaso 351 (12.9/stream) summa 251 (11.3/stream) prose 245 (8.6/stream) narra 211 (7.4/stream)
+=== hiconc2 blackfrost-derisked-bench done 00:20:02

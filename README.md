@@ -8,8 +8,10 @@ serving across **all four NVIDIA DGX Spark (GB10) nodes** at tensor-parallel 4, 
 [`incoai/GLM-5.3-Flash-DFlash2`](https://huggingface.co/incoai/GLM-5.3-Flash-DFlash2)
 block-diffusion drafter.
 
-**Current default (2026-09-20):** `nvidia/GLM-5.3-Flash-NVFP4` plus our NVFP4 attention quantization,
-serving a 500,000-token window on a 3,532,196-token fp8 KV pool. The 1M-context settings and the
+**Current defaults (2026-09-21):** two lanes off the same recipe, both 500,000-token window on a
+3,532,196-token fp8 KV pool, 43.76 GiB/rank. **Censored:** `nvidia/GLM-5.3-Flash-NVFP4`.
+**Uncensored:** `Blackfrost-AI/GLM-5.3-Flash-DERISKED-NVFP4` — operator-confirmed uncensored and coherent,
+and it measures at or above the censored lane on almost every cell. The 1M-context settings and the
 3.8M-token pool numbers below were measured on the earlier fp8/marlin lane and are labelled as such.
 
 ---
@@ -50,7 +52,7 @@ warm-up:
 | Draft acceptance | 0.394 at DFlash2 `k=7` |
 | Quality gate | **PASS** |
 | Cold prefill | **1,997 tok/s** (40,659 tokens, TTFT 20.4 s) on an idle lane |
-| Token corruption | **unresolved** - an earlier clean result was a false negative, see the retraction below |
+| Token corruption | **not seen on this lane or the Blackfrost lane** in operator use; it tracked the retired `o_proj` transplant. Mechanism still unmeasured - see the corruption section |
 
 Against the previous LibertAI-based build, on the same harness and prompts: **7 of 9 C1 categories within
 measurement noise**, aggregate level at C1-C2 and ahead at C3-C6, and concurrency ahead at every level from
@@ -58,20 +60,40 @@ C12 (**+4.8% C12, +6.9% C16, +7.6% C24, +10.0% C32**). The two C1 outliers sit j
 opposite directions. Full tables, spreads and the discarded-data notes:
 [`runs/2026-09-20-nvidia-lanes/`](runs/2026-09-20-nvidia-lanes/).
 
-### The second lane: `nvidia-glm53-ablit-attn` (abliteration transplant, refusal behaviour under test)
+### ⭐ The uncensored lane: `blackfrost-glm53-derisked-attn` (2026-09-21)
 
-Same recipe, plus `dealignai/GLM-5.3-Flash-UNCENSORED-NVFP4`'s `o_proj` tensors on layers 12-44 (33 tensors),
-substituted **before** quantization. Swap `MODEL_DIR=nvidia-glm53-ablit-attn` into the command above.
+**Uncensored default.** Start from
+[`Blackfrost-AI/GLM-5.3-Flash-DERISKED-NVFP4`](https://huggingface.co/Blackfrost-AI/GLM-5.3-Flash-DERISKED-NVFP4)
+(abliterated from `zai-org/GLM-5.3-Flash-BF16`, 1.3% refusal on their eval) and apply **the identical recipe**
+as the default lane: our NVFP4 attention quantization, the proven 14-entry ignore list, `W4A16_NVFP4`. Swap
+`MODEL_DIR=blackfrost-glm53-derisked-attn` into the command above. Same 43.76 GiB/rank, same 3,532,196-token
+pool, same knobs — the weights are the only difference, which is what makes the comparison single-variable.
 
-It measures as the default lane does: **9 of 9 C1 categories within noise**, concurrency within 1-5% across
-five levels, acceptance 0.396 against 0.394, quality gate PASS.
+Uncensored behaviour and long-session coherence are both **operator-confirmed**, in the same harness that
+garbled on the retired transplant lane. It measures at or above the censored lane on almost every cell:
+code 95.8 vs 78.7, counting 138.1 vs 107.7, prose 50.8 vs 40.8, C3 aggregate 125.0 vs 117.0, and **acceptance
+0.415 / 3.90 tok/step against 0.394 / 3.76**. Math is the one category below (83.3 vs 88.8, about −6%, at the
+edge of its spread). Full tables, spreads and caveats:
+[`runs/2026-09-21-blackfrost-derisked/`](runs/2026-09-21-blackfrost-derisked/).
 
-**Whether it actually refuses less is not established.** We measured throughput and quality, not refusal
-behaviour, so treat this as an abliteration-transplant lane with refusal behaviour still under test, not as an
-uncensored build. One concrete reason to test rather than assume: NVFP4 perturbs the weights about 9.4% in
-Frobenius norm while the `dealignai` edit is only 2-4%, so the quantization noise is roughly three times the
-abliteration signal. That does not mean the edit is gone, since quantization error is unstructured and the edit
-is directional, but it is not something to take on faith.
+⚠️ **Fix its config or it will garble.** Blackfrost's `config.json` declares `quant_algo: NVFP4` — the W4A4
+path — while shipping **zero `input_scale` tensors**, so W4A4 kernels would multiply real weight scales by
+uninitialized memory. Its own `config_groups` says `input_activations: null`, so weight-only is the intent and
+the string is mislabeled. `fix_ignore.py` rewrites it to `W4A16_NVFP4`, and the build script does this for you.
+
+### Retired: the dealignai `o_proj` transplant (`nvidia-glm53-ablit-attn`)
+
+**Do not use this lane.** It substituted `dealignai/GLM-5.3-Flash-UNCENSORED-NVFP4`'s `o_proj` tensors on
+layers 12-44 (33 tensors) before quantization. It did stop refusing, but it **garbled in live agentic use** in
+two unrelated harnesses — emoji runs, injected foreign-script fragments, duplicated paragraphs and a degenerate
+tail — and its draft acceptance had collapsed to **0.224 / 2.57 tok/step with position 7 at exactly zero**.
+
+The reason is arithmetic. Refusal in this model lives in the routed-expert `down_proj` tensors: our attribution
+measured `down_proj` moving refusal by **0.81** against **0.03** for attention plus shared/dense MLP. That pack
+edits **46** `o_proj` tensors; the real intervention is **12,384** `down_proj` tensors. It bought non-refusal by
+perturbing attention, and that is also what made it incoherent over long contexts — one cause, two symptoms.
+Blackfrost edits `down_proj` (verified: ~10% relative difference on every sampled tensor, against a
+quantization-noise floor of 0.000 on untouched classes) and does not have the problem.
 
 ### Read these two before deploying
 
@@ -132,12 +154,34 @@ Each of these was a hypothesis that failed a measurement, listed so nobody re-ru
 | Speculative-decode rejection sampler (temperature > 0 path) | same prompt at temperature 0.0 / 0.3 / 0.7 / 1.0 | **ruled out** - behaviour identical at 0 and 1.0 |
 | Context length alone | 12 accumulating turns, 33 KB system prompt, to 15.3 K context, non-streaming | **not reproduced** - 48 K characters clean |
 | Missing activation scales (above) | tensor census of the stock checkpoint | **ruled out** - 36,297 present |
-| The dealignai `o_proj` transplant | corruption predates the keys lane; `4 / 9 / 8` was measured on unmodified ModelOpt packs | **not the cause**, though not excluded as an aggravator |
+| The dealignai `o_proj` transplant | operator side-by-side: the transplant lane garbles in two unrelated harnesses, the censored nvidia lane and the Blackfrost lane do not; acceptance 0.224 on the transplant vs 0.394 / 0.415 | **leading cause** (see the resolution note below). An earlier revision of this table said "not the cause" on the grounds that `4 / 9 / 8` was measured on unmodified packs — that reasoning is withdrawn |
 
 Not yet tested, in priority order: the **full tool-call round trip** (assistant `tool_calls` -> `role: tool`
 result -> next turn, streamed, which is what both harnesses do and what every probe above omitted); context far
-beyond 15 K; and **Lane A itself**, which has never been tested with an adequate probe and is therefore
-**unverified, not clean**.
+beyond 15 K. **Both current lanes have since been exercised by the operator** in the harness that garbled on
+the retired transplant lane, and neither reproduced it.
+
+### Resolution note (2026-09-21): the transplant lane, not the quantizer
+
+Two operator tests settled the practical question even though the mechanism is still unmeasured. The censored
+`nvidia` lane and the `Blackfrost` lane are both **ModelOpt** builds and both behave correctly in the harness
+that garbled; the retired dealignai `o_proj` transplant garbled in **two unrelated harnesses**. So ModelOpt as a
+class is not the trigger, and the earlier plan to move back to RedHat `compressed-tensors` is unnecessary.
+
+A second, independent signal agrees. DFlash2 was trained against stock GLM-5.3-Flash, so draft acceptance
+measures how far a target has drifted from stock:
+
+| lane | acceptance | tokens/step | position 7 |
+|---|---|---|---|
+| dealignai `o_proj` transplant (retired) | **0.224** | **2.57** | **0.000** |
+| nvidia (censored default) | 0.394 | 3.76 | healthy |
+| Blackfrost (uncensored default) | **0.415** | **3.90** | healthy |
+
+**This remains inferential.** Seven probes failed to reproduce the garbling directly: two harnesses corrupt
+identically (not a client artifact), temperature 0 behaves like temperature 1.0 (not the spec-decode rejection
+sampler), 48K characters over 12 turns to 15.3K context stayed clean, full streamed tool-call round trips stayed
+clean, and the `input_scale` explanation was wrong (nvidia ships all 36,297). What is established is which lanes
+are safe to run, not the mechanism inside the broken one.
 
 ### Use an adequate detector
 
@@ -394,7 +438,8 @@ pack**, so the row says which upstream weights go in, not a directory you can do
 | | upstream weights | what it is |
 |---|---|---|
 | **⭐ Default lane** (`nvidia-glm53-attn`) | [nvidia/GLM-5.3-Flash-NVFP4](https://huggingface.co/nvidia/GLM-5.3-Flash-NVFP4) | official nvidia quant plus our NVFP4 attention, declared `W4A16_NVFP4`. Needs `NVFP4_PATCH=1`. The only pack here that ships calibrated `input_scale` tensors (36,297 of them), and it keeps one full expert layer in BF16 |
-| **Abliteration transplant** (`nvidia-glm53-ablit-attn`) | nvidia, plus [dealignai/GLM-5.3-Flash-UNCENSORED-NVFP4](https://huggingface.co/dealignai/GLM-5.3-Flash-UNCENSORED-NVFP4) `o_proj` on layers 12-44 | the default lane with 33 donor tensors substituted before quantization. Measured within noise of the default lane on every category and concurrency level we ran. **Refusal behaviour is unverified and still under test** |
+| **⭐ Uncensored lane** (`blackfrost-glm53-derisked-attn`) | [Blackfrost-AI/GLM-5.3-Flash-DERISKED-NVFP4](https://huggingface.co/Blackfrost-AI/GLM-5.3-Flash-DERISKED-NVFP4) plus our NVFP4 attention | abliterated from `zai-org/GLM-5.3-Flash-BF16` at the routed-expert `down_proj` tensors, where refusal actually lives. Operator-confirmed uncensored and coherent; acceptance 0.415 vs the censored lane's 0.394. **Its config declares `quant_algo: NVFP4` with zero `input_scale` tensors — rewrite to `W4A16_NVFP4` or it garbles.** Ships 120 shards and no `chat_template_mm.jinja` |
+| ~~Abliteration transplant~~ (`nvidia-glm53-ablit-attn`) | nvidia, plus [dealignai/GLM-5.3-Flash-UNCENSORED-NVFP4](https://huggingface.co/dealignai/GLM-5.3-Flash-UNCENSORED-NVFP4) `o_proj` on layers 12-44 | **RETIRED, do not use.** Edits 46 `o_proj` tensors (0.03 of the refusal signal) instead of 12,384 `down_proj` (0.81). Stopped refusing, but garbled in live use in two unrelated harnesses and acceptance collapsed to 0.224 / 2.57 tok/step |
 | Prior base | [LibertAIDAI/GLM-5.3-Flash-NVFP4](https://huggingface.co/LibertAIDAI/GLM-5.3-Flash-NVFP4) | what the default lane replaced, and the baseline the comparison above is against. Its 27-Aug build shipped **no calibrated `input_scale` tensors** while declaring `NVFP4` (which selects W4A4); they later added a separate 4.6 MB `model-input-scales.safetensors`. Harmless on a `W4A16_NVFP4` lane, which never reads activation scales |
 | Alternative | [RedHatAI/GLM-5.3-Flash-NVFP4](https://huggingface.co/RedHatAI/GLM-5.3-Flash-NVFP4) | `compressed-tensors` rather than ModelOpt, with real activation scales. Was the default while it was the corruption workaround; still a clean drop-in if you would rather not build anything, at W4A4 |
 | Historical | [drowzeys/keys-GLM-5.3-Flash-NVFP4-ablit-l15-45-anchorstock](https://huggingface.co/drowzeys/keys-GLM-5.3-Flash-NVFP4-ablit-l15-45-anchorstock) | the abliterated pack the NVFP4-KV lane below was measured on (layers 15-45, anchor-stock) |

@@ -1,0 +1,7 @@
+=== hiconc blackfrost-derisked-bench 00:07:20
+  rep 1 done 00:11:26
+  rep 2 done 00:15:33
+  C8: mean-of-medians 198.1 | ceili 470 forma 291 json 246 math 229
+  C12: mean-of-medians 237.6 | ceili 572 forma 348 math 301 codin 277
+  C16: mean-of-medians 271.0 | ceili 665 forma 372 math 351 json 320
+=== hiconc blackfrost-derisked-bench done 00:15:33
