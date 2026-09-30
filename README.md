@@ -844,7 +844,7 @@ experiment lane before production).
 ## Credits
 
 Model: [zai-org/GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash) ·
-Serving stack our fleet runs as of 2026-09-29 (lossless 8-bit dense, RoCE all-reduce, LeversScheduler, DFlash2 fp8-block drafter):
+New default serving stack (2026-09-29; lossless 8-bit dense, RoCE all-reduce, LeversScheduler, DFlash2 fp8-block drafter):
 [knapcio/GLM-5.3-Flash-4x-DGX-Spark-TP4](https://github.com/knapcio/GLM-5.3-Flash-4x-DGX-Spark-TP4) by [@knapcio](https://github.com/knapcio) ·
 Base quant: [nvidia/GLM-5.3-Flash-NVFP4](https://huggingface.co/nvidia/GLM-5.3-Flash-NVFP4) (the default lane
 builds on it) · `o_proj` donor for the abliteration-transplant lane:
