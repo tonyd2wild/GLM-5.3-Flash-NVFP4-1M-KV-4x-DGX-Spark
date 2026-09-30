@@ -859,6 +859,7 @@ NVFP4-KV lane, Zero-RoPE shim, b12x kernels and the ablit weights:
 [drowzeys / keys](https://github.com/drowzeys/keys-vLLm.0.27.1-GLM-5.3-Flash-NVFP4-NVFP4KV-1M-Context-Abliterated) ·
 the `--max-num-batched-tokens` ladder and the unconditional-flusher requirement:
 [tonyliu312](https://github.com/tonyliu312/GLM-5.3-Flash-DFlash2-TP4-1M-Context) ·
+[Matt Mastracci](https://github.com/mmastrac): the [GLM-5.3-Flash GX10 recipe](https://github.com/kindlingai/glm-5.3-flash-gx10) behind the KDA conv split, sparse-MLA prefill and MoE prefill ideas in knapcio's stack, the FlashKDA fp32-state kernels, and vLLM [PR #58454](https://github.com/vllm-project/vllm/pull/58454) ·
 barrydeen (gmu reference + quant table) · vLLM [PR #53906](https://github.com/vllm-project/vllm/pull/53906)
 authors for the day-0 image · FlashInfer 0.6.18 · Luke Alonso (b12x) ·
 jack6464 (InstantTensor pointer).
