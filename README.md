@@ -31,7 +31,8 @@ serving across **all four NVIDIA DGX Spark (GB10) nodes** at tensor-parallel 4, 
 block-diffusion drafter.
 
 **Current default (2026-09-29): [knapcio's stack](https://github.com/knapcio/GLM-5.3-Flash-4x-DGX-Spark-TP4), run
-unmodified on this fleet, with a 500,000-token window** on a 3,453,703-token KV pool, and a 262K lane beside it. On the
+unmodified on this fleet, with a 500,000-token window** (the KV pool holds about 3.4 full-length requests at once,
+measured; vLLM reports twice that), and a 262K lane beside it. On the
 same hardware, harness and day as our previous recipe: prose decode +36% to +57% at every concurrency, cold prefill +28%
 to +37%, repeated-prompt TTFT about 3× faster. The stack is knapcio's; the lane configs and measurements are ours. The
 uncensored Blackfrost lane stays on the previous recipe for now, which is documented below unchanged.
@@ -50,10 +51,16 @@ truncation chosen on the GPU, FP8 drafter, prefill kernels, and about twenty mor
 
 **Runbook, both lane configs, harness and raw results: [`runs/2026-09-29-knapcio-stack/`](runs/2026-09-29-knapcio-stack/).**
 
-| lane | context | KV pool | full-length requests that fit | config |
+| lane | context | KV pool, as vLLM reports it | full-length requests that fit | config |
 |---|---|---|---|---|
-| **500K (default)** | 500,000 | **3,453,703 tokens** | 6.9 | `env.500k` |
-| 262K | 262,144 | 2,945,172 tokens | 11.2 | `env.262k` (knapcio's own context) |
+| **500K (default)** | 500,000 | 3,453,703 tokens (6.9×) | **about 3.4** (measured) | `env.500k` |
+| 262K | 262,144 | 2,945,172 tokens (11.2×) | about 5.5 (estimated) | `env.262k` (knapcio's own context) |
+
+**vLLM's pool figure overstates capacity about 2× on this stack.** One 493,321-token request peaks at 29.1% of the
+pool, where the reported size implies 14.3%. [@brah_ddah](https://x.com/brah_ddah) found this first, measuring the
+same 2.03× ratio at 519K tokens on the same build. The 262K figure applies that ratio and has not been measured on
+that lane. Requests past capacity wait in the queue; they do not fail (see
+[KV capacity, measured](#kv-capacity-measured-2026-10-02)).
 
 Both lanes serve `glm-5.3-flash` on `:8000`, the name and port this repo's earlier recipes used, so clients do
 not change. Weights: `nvidia/GLM-5.3-Flash-NVFP4` through his CPU conversion (50 s per node; config hashes match
@@ -125,6 +132,36 @@ prompt: 18 GiB.
 Harness: this repo's speed-night suite ([`bench/bench_tp2_night.py`](runs/2026-09-29-knapcio-stack/bench/bench_tp2_night.py)), temperature 0,
 `reasoning_effort: low`, GPU clock cap 2200 MHz, 2026-09-29. Raw JSON: [`results/`](runs/2026-09-29-knapcio-stack/results/).
 
+### KV capacity, measured (2026-10-02)
+
+[@brah_ddah](https://x.com/brah_ddah) reported that this stack uses more KV blocks per request than vLLM's startup
+estimate (`GPU KV cache size: N tokens, Maximum concurrency ...`) assumes, and that four ~520K requests at once lost a
+node on their four Sparks. Same build here (vLLM `0.1.dev20051+g487ecf187`, knapcio `770d115`), 500K lane, sampling
+vLLM's `kv_cache_usage_perc` and every node's `MemAvailable` once a second:
+
+| test | result |
+|---|---|
+| one 493,321-token request, 512 forced output tokens | peak **29.1%** of the pool; the reported pool implies 14.3%: **2.04×**. Stays at that level through decode |
+| their workload: 4 distinct ~493K requests at once, 512 forced tokens each | **all 4 completed**, 0 errors, 0 preemptions. First tokens at 206 / 412 / 623 / 837 s (one prefill at a time); peak usage 32.9% |
+| free memory during both | flat at 16.7 to 20.3 GiB on every node; no `NVRM` errors in any node's kernel log |
+
+What this means:
+
+- **Real capacity is about 3.4 full-length 500K requests, not 6.9.** Shorter requests fit proportionally more.
+- **The extra blocks come out of the fixed pool, not out of free memory.** The KV pool is allocated at boot, and
+  requests that do not fit wait their turn. The node loss in their test came with GPU-driver allocation failures
+  49 s in; on our fleet nothing moved by more than 0.3 GiB in the same workload, so it looks specific to that node's
+  headroom.
+- **A long prefill stalls running requests.** While a ~493K prompt prefills, a request already decoding drops to
+  about 8 tok/s.
+- **Cause not yet pinned down.** Ruled out: `VLLM_PREFIX_CACHE_RETENTION_INTERVAL` (unset) and the indexer tail cache
+  (exactly one block per request, as counted). The suspects are the DFlash2 drafter's sliding-window group
+  (5 layers, 2,048-token window, 1,152-token blocks) or the KDA state blocks not being released during a request.
+
+Script: [`bench/kvtest.py`](runs/2026-09-29-knapcio-stack/bench/kvtest.py) (stdlib; aborts every stream if any node
+drops below 5 GiB free). Raw samples: [`results/kvtest-kv1-480k.json`](runs/2026-09-29-knapcio-stack/results/kvtest-kv1-480k.json),
+[`results/kvtest-kv4-480k.json`](runs/2026-09-29-knapcio-stack/results/kvtest-kv4-480k.json).
+
 ### What to know before you switch
 
 - **Censored checkpoint.** This stack runs `nvidia/GLM-5.3-Flash-NVFP4`. The uncensored Blackfrost lane stays on
@@ -132,6 +169,7 @@ Harness: this repo's speed-night suite ([`bench/bench_tp2_night.py`](runs/2026-0
 - **Thinking cannot be switched off** in this chat template; it takes `reasoning_effort` low, high or max. The fleet
   and both lane configs default to **low** (next section: same eval score, faster answers). The previous recipe had
   thinking off.
+- **Half the KV capacity vLLM reports.** About 3.4 full 500K requests at once, not 6.9 (measured above).
 - **500K is our setting, not his.** He validates at 262K. Past that we have one needle test per length (below)
   and a 498,636-token cold prefill, not a long-context quality evaluation.
 - **Single RoCE rail.** He runs two; our second port is addressed on two of four nodes. Prefill lands at the low
