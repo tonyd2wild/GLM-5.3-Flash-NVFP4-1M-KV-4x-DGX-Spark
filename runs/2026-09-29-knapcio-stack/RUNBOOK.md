@@ -122,5 +122,6 @@ keep the cap for the hard power-off mitigation), `TRUNC_COST=r12`.
 | `env.500k`, `env.262k` | the two lanes' env files for his `start.sh` |
 | `bench/bench_tp2_night.py` | the speed-night harness (10 prompts, C1-C6 mixed, cold prefill, long context), with `--effort` |
 | `bench/needle.py` | three needles at 10/50/90% depth of a salted document; cold prefill + retrieval |
+| `bench/kvtest.py` | N concurrent long requests; samples KV usage and every node's free memory each second, aborts below 5 GiB (2026-10-02) |
 | `results/` | every run's raw JSON |
 | `charts/make_charts.py`, `charts/*.svg` | the README charts (no dependencies), light and dark |
