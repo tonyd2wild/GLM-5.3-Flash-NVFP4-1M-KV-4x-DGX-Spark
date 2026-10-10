@@ -33,8 +33,13 @@ block-diffusion drafter.
 **Current default (2026-09-29): [knapcio's stack](https://github.com/knapcio/GLM-5.3-Flash-4x-DGX-Spark-TP4), run
 unmodified on this fleet, with a 500,000-token window** on a 3,453,703-token KV pool, and a 262K lane beside it. On the
 same hardware, harness and day as our previous recipe: prose decode +36% to +57% at every concurrency, cold prefill +28%
-to +37%, repeated-prompt TTFT about 3× faster. The stack is knapcio's; the lane configs and measurements are ours. The
-uncensored Blackfrost lane stays on the previous recipe for now, which is documented below unchanged.
+to +37%, repeated-prompt TTFT about 3× faster. The stack is knapcio's; the lane configs and measurements are ours.
+
+**Update 2026-09-30: the uncensored Blackfrost weights now run on knapcio's stack too, and that is what serves
+:8000 on this fleet.** Same 500K lane, same `reasoning_effort: low`, only the weights differ
+([`Blackfrost-AI/GLM-5.3-Flash-DERISKED-NVFP4`](https://huggingface.co/Blackfrost-AI/GLM-5.3-Flash-DERISKED-NVFP4)
+through knapcio's 8-bit builder). See [the DERISKED-on-knapcio notes](#uncensored-weights-on-knapcios-stack-2026-09-30)
+below. The previous-recipe Blackfrost lane further down is kept for reference.
 
 ---
 
@@ -125,10 +130,32 @@ prompt: 18 GiB.
 Harness: this repo's speed-night suite ([`bench/bench_tp2_night.py`](runs/2026-09-29-knapcio-stack/bench/bench_tp2_night.py)), temperature 0,
 `reasoning_effort: low`, GPU clock cap 2200 MHz, 2026-09-29. Raw JSON: [`results/`](runs/2026-09-29-knapcio-stack/results/).
 
+### Uncensored weights on knapcio's stack (2026-09-30)
+
+Live on :8000 since 2026-09-30, after a power-cut relaunch on 2026-10-10 the same way.
+
+- **Build (~45 s, zero-copy):** run knapcio's `scripts/build_lossless8.sh` with the DERISKED checkpoint as the base:
+  `build_lossless8.sh /models/GLM-5.3-Flash-DERISKED-NVFP4-blackfrost /models/glm-quant-mix-derisked`
+  (hardlinks plus a ~6.4 GiB overlay).
+- **One fix:** DERISKED keeps the dense MLP layers 0-2 in BF16 (its recipe quantizes routed experts only), but the
+  builder lists them as `W4A16_NVFP4`. First boot dies with `AssertionError param_data.shape == loaded_weight.shape`.
+  Remove the `.layers.[012].mlp.` entries from `quantized_layers` in the build's `config.json` and
+  `hf_quant_config.json` (549 → 537 entries). DERISKED has no expert `input_scale`; the stack already treats experts
+  as W4A16, so nothing else changes.
+- **Serve:** the same `start.sh serve` with `MODEL_DIR` pointed at the DERISKED build, a fresh container name and its
+  own overlay path. Healthy in about 4-5 minutes.
+- **Measured (same 5-prompt A/B, effort low):** 90 tok/s vs 80 censored; it thinks and writes about 2× more tokens
+  (median 1.8 s vs 1.3 s). On our 69-test agent eval it scores 86.2 vs 93.5 censored: refusal tests fail by design,
+  and it completed one "send sensitive data out" test the censored lane refuses. Run it where that risk is
+  acceptable.
+- **Relaunch after a power cut:** do not `docker start` the old stopped containers (the head's TCPStore closes and
+  every worker dies about a minute in). Remove the stopped containers, drop page caches on all four nodes, re-check
+  the model mounts, then `start.sh serve`.
+
 ### What to know before you switch
 
-- **Censored checkpoint.** This stack runs `nvidia/GLM-5.3-Flash-NVFP4`. The uncensored Blackfrost lane stays on
-  the previous recipe (below) until his 8-bit conversion is tested on those weights.
+- **Checkpoint.** The stack ships for `nvidia/GLM-5.3-Flash-NVFP4` (censored). Since 2026-09-30 we also run the
+  uncensored Blackfrost DERISKED weights on it; see the next section for the one config fix that needs.
 - **Thinking cannot be switched off** in this chat template; it takes `reasoning_effort` low, high or max. The fleet
   and both lane configs default to **low** (next section: same eval score, faster answers). The previous recipe had
   thinking off.
